@@ -25,15 +25,19 @@ node_counts = md_counts // gpus_per_node
 
 HOME = os.environ.get('HOME')
 conda_path = os.environ.get('CONDA_PREFIX')
-base_path = os.path.abspath('.') # '/gpfs/alpine/proj-shared/bip179/entk/hyperspace/microscope/experiments/'
+base_path = os.path.abspath('.')
 conda_sh = '/lus/scratch/arigazzi/anaconda3/etc/profile.d/conda.sh'
 
-CUR_STAGE=0
+CUR_STAGE=1
 MAX_STAGE=10
 RETRAIN_FREQ = 5
 
 LEN_initial = 10
 LEN_iter = 10 
+
+print("-"*49)
+print(" "*21 + "WELCOME")
+print("-"*49 + "\n")
 
 def run_training_pipeline(exp):
     """
@@ -46,27 +50,30 @@ def run_training_pipeline(exp):
         """
         
         initial_MD = True 
-        outlier_filepath = '%s/Outlier_search/restart_points.json' % base_path
+        outlier_filepath = f'{exp.exp_path}/SmartSim-Outlier_search/restart_points.json'
 
         if os.path.exists(outlier_filepath): 
             initial_MD = False 
             outlier_file = open(outlier_filepath, 'r') 
             outlier_list = json.load(outlier_file) 
+            print(f"Found {len(outlier_list)} outliers")
             outlier_file.close() 
 
         # MD tasks
         time_stamp = int(time.time())
 
-        md_batch_args = {"N": node_counts, "ntasks-per-node": 1}
+        md_batch_args = {"nodes": node_counts, "ntasks-per-node": 1, "constraint": "P100", "exclusive": None}
         md_batch_settings = SbatchSettings(time="01:00:00", batch_args=md_batch_args)
         md_batch_settings.add_preamble(f'. {conda_sh}')
         md_batch_settings.add_preamble(f'conda activate {conda_path}')
         md_batch_settings.add_preamble('module load cudatoolkit')
-        md_batch_settings.add_preamble(f'export PYTHONPATH={base_path}/MD_exps:{base_path}/MD_exps/MD_utils:$PYTHONPATH')
+        md_batch_settings.add_preamble(f'export PYTHONPATH={base_path}/MD_exps:{base_path}/MD_exps/MD_utils_fspep:$PYTHONPATH')
         md_ensemble = exp.create_ensemble("SmartSim-fs-pep", batch_settings=md_batch_settings)
         for i in range(num_MD):
-            md_run_settings = SrunSettings(exe=f"python", exe_args=f"{base_path}/MD_exps/fs-pep/run_openmm.py")
-            
+            md_run_settings = SrunSettings(exe=f"python", exe_args=f"{base_path}/MD_exps/fs-pep/run_openmm.py", run_args={"exclusive": None})
+            md_run_settings.set_nodes(1)
+            md_run_settings.set_tasks(1)
+            md_run_settings.set_tasks_per_node(1)
 
             # pick initial point of simulation 
             if initial_MD or i >= len(outlier_list): 
@@ -80,13 +87,13 @@ def run_training_pipeline(exp):
 
             # how long to run the simulation 
             if initial_MD: 
-                md_run_settings.add_exe_args(['--length', LEN_initial])
+                md_run_settings.add_exe_args(['--length', str(LEN_initial)])
             else: 
-                md_run_settings.add_exe_args(['--length', LEN_iter])
+                md_run_settings.add_exe_args(['--length', str(LEN_iter)])
                               
             # Add the MD task to the simulating stage
-            md_model = exp.create_model(f"omm_runs_{time_stamp+i}", run_settings=md_run_settings, path=f"{base_path}/MD_exps/fs-pep")
-            if outlier_list[i].endswith('pdb') or outlier_list[i].endswith('chk'):
+            md_model = exp.create_model(f"omm_runs_{time_stamp+i}", run_settings=md_run_settings)
+            if not initial_MD and (outlier_list[i].endswith('pdb') or outlier_list[i].endswith('chk')):
                 md_model.attach_generator_files(to_copy=[outlier_list[i]])
             
             md_ensemble.add_model(md_model)
@@ -100,18 +107,22 @@ def run_training_pipeline(exp):
         Function to concatenate the MD trajectory (h5 contact map) 
         """ 
         aggr_run_settings = SrunSettings('python',
-                                         ['%s/MD_to_CVAE/MD_to_CVAE.py' % base_path, 
-                                          '--sim_path', '%s/MD_exps/fs-pep' % base_path] )
+                                         [f'{base_path}/MD_to_CVAE/MD_to_CVAE.py', 
+                                          '--sim_path', f'{os.path.join(exp.exp_path, "SmartSim-fs-pep")}'])
+        aggr_run_settings.set_tasks(1)
+        aggr_run_settings.set_nodes(1)
+        aggr_run_settings.set_tasks_per_node(1)
 
         aggr_batch_settings = SbatchSettings(time="00:10:00", batch_args = {"N": 1, "n": 1})
 
         aggr_batch_settings.add_preamble([f'. {conda_sh}', f'conda activate {conda_path}'])
 
         # Add the aggregation task to the aggreagating stage
-        aggregating_model = exp.create_model('SmartSim-MD_to_CVAE', run_settings=aggr_run_settings, path=f'{base_path}/MD_to_CVAE')
+        aggregating_model = exp.create_model('SmartSim-MD_to_CVAE', run_settings=aggr_run_settings, path=os.path.join(exp.exp_path, "SmartSim-MD_to_CVAE"))
         aggregating_ensemble = exp.create_ensemble("SmartSim-MD_to_CVAE", batch_settings=aggr_batch_settings)
         aggregating_ensemble.add_model(aggregating_model)
 
+        exp.generate(aggregating_model, overwrite=True)
         return aggregating_ensemble
 
 
@@ -121,7 +132,7 @@ def run_training_pipeline(exp):
         """
 
         time_stamp = int(time.time())
-        ml_batch_settings = SbatchSettings(time="02:00:00", batch_args={"N": num_ML, "ntasks-per-node": 1})
+        ml_batch_settings = SbatchSettings(time="02:00:00", batch_args={"nodes": num_ML, "ntasks-per-node": 1, "constraint": "P100"})
         ml_batch_settings.add_preamble([f'. {conda_sh}', 'module load cudatoolkit', f'conda activate {conda_path}' ])
         ml_batch_settings.add_preamble(f'export PYTHONPATH={base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:$PYTHONPATH')
         ml_ensemble = exp.create_ensemble("SmartSim-ML", batch_settings=ml_batch_settings)
@@ -130,8 +141,11 @@ def run_training_pipeline(exp):
             dim = i + 3 
             cvae_dir = 'cvae_runs_%.2d_%d' % (dim, time_stamp+i) 
             ml_run_settings = SrunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
-                    '--h5_file', f'{base_path}/MD_to_CVAE/cvae_input.h5', 
-                    '--dim', dim] )
+                    '--h5_file', f'{exp.exp_path}/SmartSim-MD_to_CVAE/cvae_input.h5', 
+                    '--dim', str(dim)])
+            ml_run_settings.set_tasks_per_node(1)
+            ml_run_settings.set_tasks(1)
+            ml_run_settings.set_nodes(1)
             ml_model = exp.create_model(name=cvae_dir, path=f'{base_path}/CVAE_exps', run_settings=ml_run_settings)
 
             ml_ensemble.add_model(ml_model)
@@ -144,54 +158,56 @@ def run_training_pipeline(exp):
         
         interfacing_run_settings = SrunSettings('python', 
                                                 exe_args=['outlier_locator.py',
-                                                '--md', '../MD_exps/fs-pep', 
-                                                '--cvae', '../CVAE_exps', 
-                                                '--pdb', '../MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb', 
-                                                '--ref', '../MD_exps/fs-pep/pdb/fs-peptide.pdb'])
-        interfacing_batch_settings = SbatchSettings(time="00:10:00", batch_args = {"N": 1, "n": 1})
+                                                '--md', f'{exp.exp_path}/SmartSim-fs-pep', 
+                                                '--cvae', f'{exp.exp_path}/SmartSim-ML', 
+                                                '--pdb', '../../MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb', 
+                                                '--ref', '../../MD_exps/fs-pep/pdb/fs-peptide.pdb'])
+        interfacing_run_settings.set_nodes(1)
+        interfacing_run_settings.set_tasks_per_node(1)
+        interfacing_run_settings.set_tasks(1)
+        interfacing_batch_settings = SbatchSettings(time="00:10:00", batch_args = {"nodes": node_counts, "ntasks-per-node": 1, "constraint": "P100"})
         interfacing_batch_settings.add_preamble([f'. {conda_sh}',
-                                                 'module load cudatoolkit'
-                                                 f'conda activate {conda_path}'
-                                                 f'export PYTHONPATH={base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:$PYTHONPATH'
+                                                 'module load cudatoolkit',
+                                                 f'conda activate {conda_path}',
+                                                 f'export PYTHONPATH={base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:$PYTHONPATH',
                                                 ])
         # Scaning for outliers and prepare the next stage of MDs 
         
-        interfacing_model = exp.create_model('Outlier_search', path=None, run_settings=interfacing_run_settings)
-        interfacing_ensemble = exp.create_ensemble('Outlier_search', path='.', BatchSettings=interfacing_batch_settings)
-
+        interfacing_model = exp.create_model('SmartSim-Outlier_search', run_settings=interfacing_run_settings)
+        interfacing_ensemble = exp.create_ensemble('SmartSim-Outlier_search', batch_settings=interfacing_batch_settings)
+        interfacing_model.attach_generator_files(to_copy = [os.path.join(base_path, "Outlier_search", "outlier_locator.py"),
+                                                            os.path.join(base_path, "Outlier_search", "utils.py")])
         interfacing_ensemble.add_model(interfacing_model)
 
-        exp.generate(interfacing_ensemble)
+        exp.generate(interfacing_model, overwrite=True)
         return interfacing_ensemble
-
 
 
     for CUR_STAGE in range(MAX_STAGE):
         print ('finishing stage %d of %d' % (CUR_STAGE, MAX_STAGE))
         
         # --------------------------
-        # MD stage
+        # MD stage, re-initialized at every iteration
         md_stage = generate_MD_stage(num_MD=md_counts)
-        # Add simulating stage to the training pipeline
-        exp.run(md_stage)
+        exp.start(md_stage)
 
         if CUR_STAGE % RETRAIN_FREQ == 0: 
             # --------------------------
-            # Aggregate stage
-            aggregating_stage = generate_aggregating_stage() 
-            # Add the aggregating stage to the training pipeline
-            exp.run(aggregating_stage)
+            # Aggregate stage, initialize once
+            if CUR_STAGE == 0:
+                aggregating_stage = generate_aggregating_stage()            
+            exp.start(aggregating_stage)
 
             # --------------------------
-            # Learning stage
-            ml_stage = generate_ML_stage(num_ML=ml_counts) 
-            # Add the learning stage to the pipeline
-            exp.run(ml_stage)
+            # Learning stage, re-initialized at every retrain iteration
+            ml_stage = generate_ML_stage(num_ML=ml_counts)
+            exp.start(ml_stage)
 
         # --------------------------
         # Outlier identification stage
-        interfacing_stage = generate_interfacing_stage() 
-        exp.run(interfacing_stage)
+        if CUR_STAGE==0:
+                interfacing_stage = generate_interfacing_stage() 
+        exp.start(interfacing_stage)
     
 
     return 
@@ -199,7 +215,7 @@ def run_training_pipeline(exp):
 
 if __name__ == '__main__':
 
-    exp = Experiment(name="SmartSim-MD", launcher="slurm", exp_path='.')
+    exp = Experiment(name="SmartSim-MD", launcher="slurm", exp_path='SmartSim-DDMD')
 
     run_training_pipeline(exp)
     

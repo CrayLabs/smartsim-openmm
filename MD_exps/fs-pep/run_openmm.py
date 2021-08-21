@@ -2,7 +2,7 @@ import simtk.unit as u
 import sys, os, shutil 
 import argparse 
 
-from MD_utils.openmm_simulation import openmm_simulate_amber_fs_pep 
+from MD_utils_fspep.openmm_simulation import openmm_simulate_amber_fs_pep 
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-f", "--pdb_file", dest="f", help="pdb file")
@@ -29,7 +29,7 @@ else:
 # pdb_file = os.path.abspath('./pdb/100-fs-peptide-400K.pdb')
 # ref_pdb_file = os.path.abspath('./pdb/fs-peptide.pdb')
 
-gpu_index = 0 # os.environ["CUDA_VISIBLE_DEVICES"]
+gpu_index = 0 
 
 # check_point = None
 openmm_simulate_amber_fs_pep(pdb_file,
