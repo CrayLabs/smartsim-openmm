@@ -131,8 +131,8 @@ for outlier in outlier_list_uni:
 outliers_list = glob(os.path.join(outliers_pdb_path, 'omm_runs*.pdb')) 
 for outlier in outliers_list: 
     if outlier not in new_outliers_list: 
-        print ('Old outlier {} is now connected to a cluster and removing it' \
-        + ' from the outlier list '.format(os.path.basename(outlier)))
+        print (f'Old outlier {os.path.basename(outlier)} is now connected to a cluster and removing it' \
+        + ' from the outlier list ')
         os.rename(outlier, os.path.join(os.path.dirname(outlier), '_'+os.path.basename(outlier))) 
 
 
