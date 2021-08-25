@@ -25,7 +25,7 @@ conda_path = os.environ.get('CONDA_PREFIX')
 base_path = os.path.abspath('.')
 conda_sh = '/lus/scratch/arigazzi/anaconda3/etc/profile.d/conda.sh'
 
-CUR_STAGE=1
+#CUR_STAGE=1
 MAX_STAGE=10
 RETRAIN_FREQ = 5
 
@@ -59,12 +59,15 @@ class TrainingPipeline:
         initial_MD = True
         outlier_filepath = f'{self.exp.exp_path}/SmartSim-Outlier_search/SmartSim-Outlier_search/restart_points.json'
 
-        if os.path.exists(outlier_filepath): 
-            initial_MD = False 
+        if os.path.exists(outlier_filepath):
             outlier_file = open(outlier_filepath, 'r') 
             outlier_list = json.load(outlier_file) 
-            print(f"Found {len(outlier_list)} outliers")
-            outlier_file.close() 
+            outlier_file.close()
+            num_outliers = len(outlier_list)
+            print(f"Found {num_outliers} outliers")
+            initial_MD = num_outliers > 0
+            if num_outliers == 0:
+                print("No outlier in file")
         else:
             print("No outlier file found")
 

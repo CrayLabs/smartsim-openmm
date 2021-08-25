@@ -180,7 +180,10 @@ restart_points = restart_checkpnts + restart_pdbs
 print (restart_points)
 
 restart_points_filepath = os.path.abspath('./restart_points.json') 
-with open(restart_points_filepath, 'w') as restart_file: 
-    json.dump(restart_points, restart_file) 
+with open(restart_points_filepath, 'w') as restart_file:
+    if len(restart_points) > 0:
+        json.dump(restart_points, restart_file)
+    else:
+        restart_file.write("[]")
 
 
