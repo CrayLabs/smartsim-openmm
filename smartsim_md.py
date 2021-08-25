@@ -25,8 +25,6 @@ conda_path = os.environ.get('CONDA_PREFIX')
 base_path = os.path.abspath('.')
 conda_sh = '/lus/scratch/arigazzi/anaconda3/etc/profile.d/conda.sh'
 
-#CUR_STAGE=1
-MAX_STAGE=10
 RETRAIN_FREQ = 5
 
 if TINY:
@@ -34,11 +32,13 @@ if TINY:
     LEN_iter = 5
     md_counts = gpus_per_node*2
     ml_counts = 2
+    MAX_STAGE=2
 else:
     LEN_initial = 10
     LEN_iter = 10 
     md_counts = 12
     ml_counts = 10
+    MAX_STAGE=10
 
 node_counts = md_counts // gpus_per_node
 
@@ -196,7 +196,7 @@ class TrainingPipeline:
 
 
     def run_pipeline(self):
-        for CUR_STAGE in range(MAX_STAGE):
+        for CUR_STAGE in range(MAX_STAGE+1):
             print ('finishing stage %d of %d' % (CUR_STAGE, MAX_STAGE))
             
             # --------------------------
