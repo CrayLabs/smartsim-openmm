@@ -18,6 +18,7 @@ and then to install packages in the following way:
 ```bash
 pip install tensorflow==2.4.2 keras==2.4.3 numpy==1.19.2 cython smartsim
 conda install -c conda-forge openmm
+pip install MDAnalysis MDAnalysisTests parmed --force
 ```
 
 ## System-dependent settings
