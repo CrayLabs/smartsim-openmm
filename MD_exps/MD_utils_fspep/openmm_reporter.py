@@ -1,9 +1,11 @@
 import simtk.openmm.app as app
 import simtk.openmm as omm
 import simtk.unit as u 
+from smartredis import Client
 
 import numpy as np 
 import h5py 
+import os
 
 from MDAnalysis.analysis import distances
 
@@ -13,6 +15,8 @@ class ContactMapReporter(object):
         self._file.swmr_mode = True
         self._out = self._file.create_dataset('contact_maps', shape=(2,0), maxshape=(None, None))
         self._reportInterval = reportInterval
+        self._client = Client(cluster=True)
+        print(os.environ["SSDB"])
 
     def __del__(self):
         self._file.close()
@@ -35,3 +39,4 @@ class ContactMapReporter(object):
         self._out.resize(new_shape)
         self._out[:, new_shape[1]-1] =contact_map
         self._file.flush()
+        self._client.put_tensor("contact_map", contact_map)

@@ -1,33 +1,7 @@
-import os, sys, h5py
-
-# from keras.optimizers import RMSprop
+import os, h5py
 
 from vae_conv import conv_variational_autoencoder
-# sys.path.append('$HOME/Research/molecules/molecules_git/build/lib')
-# from molecules.ml.unsupervised import VAE
-# from molecules.ml.unsupervised import EncoderConvolution2D
-# from molecules.ml.unsupervised import DecoderConvolution2D
-# from molecules.ml.unsupervised.callbacks import EmbeddingCallback 
 
-# def CVAE(input_shape, hyper_dim=3): 
-#     optimizer = RMSprop(lr=0.001, rho=0.9, epsilon=1e-08, decay=0.0)
-
-#     encoder = EncoderConvolution2D(input_shape=input_shape)
-
-#     encoder._get_final_conv_params()
-#     num_conv_params = encoder.total_conv_params
-#     encode_conv_shape = encoder.final_conv_shape
-
-#     decoder = DecoderConvolution2D(output_shape=input_shape,
-#                                    enc_conv_params=num_conv_params,
-#                                    enc_conv_shape=encode_conv_shape)
-
-#     cvae = VAE(input_shape=input_shape,
-#                latent_dim=hyper_dim,
-#                encoder=encoder,
-#                decoder=decoder,
-#                optimizer=optimizer) 
-#     return cvae 
 
 def CVAE(input_shape, latent_dim=3): 
     image_size = input_shape[:-1]

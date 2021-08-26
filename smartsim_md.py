@@ -1,7 +1,7 @@
 import os, json, time 
 from smartsim import Experiment
 from smartsim.settings import SrunSettings, SbatchSettings
-from smartsim.settings.settings import BatchSettings
+from smartsim.database import SlurmOrchestrator
 
 # Assumptions:
 # - # of MD steps: 2
@@ -18,7 +18,7 @@ from smartsim.settings.settings import BatchSettings
 #
 
 gpus_per_node = 1  # 6 on Summit, 1 on Horizon
-TINY = False
+TINY = True
 
 HOME = os.environ.get('HOME')
 conda_path = os.environ.get('CONDA_PREFIX')
@@ -50,6 +50,12 @@ class TrainingPipeline:
     def __init__(self):
         self.exp = Experiment(name="SmartSim-MD", launcher="slurm", exp_path='SmartSim-DDMD')
         
+    
+    def generate_orchestrator(self):
+        orchestrator = SlurmOrchestrator(db_nodes=3, time="06:00:00")
+        self.exp.generate(orchestrator)
+        return orchestrator
+
 
     def generate_MD_stage(self, num_MD=1): 
         """
@@ -79,10 +85,14 @@ class TrainingPipeline:
         md_batch_settings.add_preamble(f'. {conda_sh}')
         md_batch_settings.add_preamble(f'conda activate {conda_path}')
         md_batch_settings.add_preamble('module load cudatoolkit')
-        md_batch_settings.add_preamble(f'export PYTHONPATH={base_path}/MD_exps:{base_path}/MD_exps/MD_utils_fspep:$PYTHONPATH')
+        python_path = os.getenv("PYTHONPATH", "")
+        python_path = f"{base_path}/MD_exps:{base_path}/MD_exps/MD_utils_fspep:" + python_path
+        # md_batch_settings.add_preamble(f'export PYTHONPATH={base_path}/MD_exps:{base_path}/MD_exps/MD_utils_fspep:$PYTHONPATH')
         md_ensemble = self.exp.create_ensemble("SmartSim-fs-pep", batch_settings=md_batch_settings)
         for i in range(num_MD):
-            md_run_settings = SrunSettings(exe=f"python", exe_args=f"{base_path}/MD_exps/fs-pep/run_openmm.py", run_args={"exclusive": None})
+            md_run_settings = SrunSettings(exe=f"python",
+                                            exe_args=f"{base_path}/MD_exps/fs-pep/run_openmm.py",
+                                            run_args={"exclusive": None}, env_vars={"PYTHONPATH": python_path})
             md_run_settings.set_nodes(1)
             md_run_settings.set_tasks(1)
             md_run_settings.set_tasks_per_node(1)
@@ -196,6 +206,10 @@ class TrainingPipeline:
 
 
     def run_pipeline(self):
+
+        self.orchestrator = self.generate_orchestrator()
+        self.exp.start(self.orchestrator)
+
         for CUR_STAGE in range(MAX_STAGE+1):
             print ('finishing stage %d of %d' % (CUR_STAGE, MAX_STAGE))
             
