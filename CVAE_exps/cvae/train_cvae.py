@@ -12,7 +12,7 @@ parser.add_argument("-gpu", default=0, help="gpu_id")
 
 args = parser.parse_args()
 
-print args.f, args.dim, args.gpu 
+print (args.f, args.dim, args.gpu)
 
 cvae_input = args.f
 hyper_dim = args.dim 

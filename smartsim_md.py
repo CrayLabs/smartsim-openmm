@@ -25,19 +25,20 @@ conda_path = os.environ.get('CONDA_PREFIX')
 base_path = os.path.abspath('.')
 conda_sh = '/lus/scratch/arigazzi/anaconda3/etc/profile.d/conda.sh'
 
-RETRAIN_FREQ = 5
 
 if TINY:
     LEN_initial = 5
     LEN_iter = 5
     md_counts = gpus_per_node*2
     ml_counts = 2
-    MAX_STAGE=2
+    RETRAIN_FREQ = 2
+    MAX_STAGE=4
 else:
     LEN_initial = 10
     LEN_iter = 10 
     md_counts = 12
     ml_counts = 10
+    RETRAIN_FREQ = 5
     MAX_STAGE=10
 
 node_counts = md_counts // gpus_per_node
@@ -48,13 +49,20 @@ print("-"*49 + "\n")
 
 class TrainingPipeline:
     def __init__(self):
-        self.exp = Experiment(name="SmartSim-MD", launcher="slurm", exp_path='SmartSim-DDMD')
+        self.exp = Experiment(name="SmartSim-DDMD", launcher="slurm")
+        self.exp.generate(overwrite=True)
         
     
-    def generate_orchestrator(self):
-        orchestrator = SlurmOrchestrator(db_nodes=3, time="06:00:00")
-        self.exp.generate(orchestrator)
-        return orchestrator
+    def start_orchestrator(self, attach=False):
+        checkpoint = os.path.join(self.exp.exp_path, "database", "smartsim_db.dat")
+        if attach and os.path.exists(checkpoint):
+            print("Found orchestrator checkpoint, reconnecting")
+            self.orchestrator = self.exp.reconnect_orchestrator(checkpoint)
+        else:
+            self.orchestrator = SlurmOrchestrator(db_nodes=3, time="02:00:00")
+            self.exp.generate(self.orchestrator)
+            self.exp.start(self.orchestrator)
+        return
 
 
     def generate_MD_stage(self, num_MD=1): 
@@ -135,7 +143,7 @@ class TrainingPipeline:
         aggr_run_settings.set_nodes(1)
         aggr_run_settings.set_tasks_per_node(1)
 
-        aggr_batch_settings = SbatchSettings(time="00:10:00", batch_args = {"N": 1, "n": 1})
+        aggr_batch_settings = SbatchSettings(time="00:10:00", batch_args = {"nodes": 1, "ntasks-per-node": 1})
 
         aggr_batch_settings.add_preamble([f'. {conda_sh}', f'conda activate {conda_path}'])
 
@@ -156,7 +164,8 @@ class TrainingPipeline:
         time_stamp = int(time.time())
         ml_batch_settings = SbatchSettings(time="02:00:00", batch_args={"nodes": num_ML, "ntasks-per-node": 1, "constraint": "P100"})
         ml_batch_settings.add_preamble([f'. {conda_sh}', 'module load cudatoolkit', f'conda activate {conda_path}' ])
-        ml_batch_settings.add_preamble(f'export PYTHONPATH={base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:$PYTHONPATH')
+        python_path = os.getenv("PYTHONPATH", "")
+        python_path = f"{base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:" + python_path
         ml_ensemble = self.exp.create_ensemble("SmartSim-ML", batch_settings=ml_batch_settings)
         # learn task
         for i in range(num_ML): 
@@ -164,7 +173,8 @@ class TrainingPipeline:
             cvae_dir = 'cvae_runs_%.2d_%d' % (dim, time_stamp+i) 
             ml_run_settings = SrunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
                     '--h5_file', f'{self.aggregating_stage.entities[0].path}/cvae_input.h5', 
-                    '--dim', str(dim)])
+                    '--dim', str(dim)],
+                    env_vars={"PYTHONPATH": python_path})
             ml_run_settings.set_tasks_per_node(1)
             ml_run_settings.set_tasks(1)
             ml_run_settings.set_nodes(1)
@@ -178,12 +188,15 @@ class TrainingPipeline:
 
     def generate_interfacing_stage(self): 
         
+        python_path = os.getenv("PYTHONPATH", "")
+        python_path = f"{base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:" + python_path
         interfacing_run_settings = SrunSettings('python', 
                                                 exe_args=['outlier_locator.py',
                                                 '--md', f'{self.md_stage.path}', 
                                                 '--cvae', f'{self.ml_stage.path}', 
                                                 '--pdb', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb', 
-                                                '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb'])
+                                                '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb'],
+                                                env_vars={"PYTHONPATH": python_path})
         interfacing_run_settings.set_nodes(1)
         interfacing_run_settings.set_tasks_per_node(1)
         interfacing_run_settings.set_tasks(1)
@@ -191,7 +204,6 @@ class TrainingPipeline:
         interfacing_batch_settings.add_preamble([f'. {conda_sh}',
                                                  'module load cudatoolkit',
                                                  f'conda activate {conda_path}',
-                                                 f'export PYTHONPATH={base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:$PYTHONPATH',
                                                 ])
         # Scanning for outliers and prepare the next stage of MDs 
         
@@ -207,11 +219,10 @@ class TrainingPipeline:
 
     def run_pipeline(self):
 
-        self.orchestrator = self.generate_orchestrator()
-        self.exp.start(self.orchestrator)
+        self.start_orchestrator()
 
         for CUR_STAGE in range(MAX_STAGE+1):
-            print ('finishing stage %d of %d' % (CUR_STAGE, MAX_STAGE))
+            print ('Running stage %d of %d' % (CUR_STAGE, MAX_STAGE))
             
             # --------------------------
             # MD stage, re-initialized at every iteration
@@ -235,7 +246,12 @@ class TrainingPipeline:
             if CUR_STAGE==0:
                 self.interfacing_stage = self.generate_interfacing_stage() 
             self.exp.start(self.interfacing_stage)
-    
+
+        input("Press Enter to terminate and kill the orchestrator (if it is still running)...")
+        # self.exp.stop(self.orchestrator)
+
+    def __del__(self):
+        self.exp.stop(self.orchestrator)
 
 if __name__ == '__main__':
 

@@ -8,7 +8,6 @@ import numpy as np
 import sys, os, h5py, time, errno, random
 import GPUtil
 import subprocess
-from sklearn.cluster import DBSCAN
 import MDAnalysis as mda
 from  MDAnalysis.analysis.rms import RMSD
 

@@ -4,7 +4,8 @@ import simtk.unit as u
 
 import parmed as pmd
 import random
-from openmm_reporter import ContactMapReporter
+import time
+from openmm_reporter import ContactMapReporter, SmartSimContactMapReporter
 
 
 def openmm_simulate_charmm_nvt(top_file, pdb_file, check_point=None, GPU_index=0,  
@@ -74,6 +75,7 @@ def openmm_simulate_charmm_nvt(top_file, pdb_file, check_point=None, GPU_index=0
     simulation.reporters.append(app.DCDReporter(output_traj, report_freq))
     if output_cm: 
         simulation.reporters.append(ContactMapReporter(output_cm, report_freq))
+        simulation.reporters.append(SmartSimContactMapReporter(str(time.time()), report_freq))
     simulation.reporters.append(app.StateDataReporter(output_log,
             report_freq, step=True, time=True, speed=True,
             potentialEnergy=True, temperature=True, totalEnergy=True))
@@ -148,6 +150,7 @@ def openmm_simulate_amber_nvt(top_file, pdb_file, GPU_index=0,
     simulation.reporters.append(app.DCDReporter(output_traj, report_freq))
     if output_cm:
         simulation.reporters.append(ContactMapReporter(output_cm, report_freq))
+        simulation.reporters.append(SmartSimContactMapReporter(str(time.time()), report_freq))
     simulation.reporters.append(app.StateDataReporter(output_log,
             report_freq, step=True, time=True, speed=True,
             potentialEnergy=True, temperature=True, totalEnergy=True))
@@ -229,6 +232,7 @@ def openmm_simulate_amber_fs_pep(pdb_file, top_file=None, check_point=None, GPU_
     simulation.reporters.append(app.DCDReporter(output_traj, report_freq))
     if output_cm:
         simulation.reporters.append(ContactMapReporter(output_cm, report_freq))
+        simulation.reporters.append(SmartSimContactMapReporter(str(time.time()), report_freq))
     simulation.reporters.append(app.StateDataReporter(output_log,
             report_freq, step=True, time=True, speed=True,
             potentialEnergy=True, temperature=True, totalEnergy=True))
@@ -310,6 +314,7 @@ def openmm_simulate_charmm_npt_z(top_file, pdb_file, check_point=None, GPU_index
     simulation.reporters.append(app.DCDReporter(output_traj, report_freq))
     if output_cm:
         simulation.reporters.append(ContactMapReporter(output_cm, report_freq))
+        simulation.reporters.append(SmartSimContactMapReporter(str(time.time()), report_freq))
     simulation.reporters.append(app.StateDataReporter(output_log,
             report_freq, step=True, time=True, speed=True,
             potentialEnergy=True, temperature=True, totalEnergy=True))
@@ -385,6 +390,7 @@ def openmm_simulate_amber_npt(top_file, pdb_file, check_point, GPU_index=0,
     simulation.reporters.append(app.DCDReporter(output_traj, report_freq))
     if output_cm:
         simulation.reporters.append(ContactMapReporter(output_cm, report_freq))
+        simulation.reporters.append(SmartSimContactMapReporter(str(time.time()), report_freq))
     simulation.reporters.append(app.StateDataReporter(output_log,
             report_freq, step=True, time=True, speed=True,
             potentialEnergy=True, temperature=True, totalEnergy=True))
