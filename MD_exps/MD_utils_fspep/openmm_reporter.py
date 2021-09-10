@@ -44,7 +44,7 @@ class SmartSimContactMapReporter(object):
         self._client = Client(address=None, cluster=True)
         self._worker_id = worker_id
         dataset_name = "openmm_" + str(self._worker_id)
-        if self._client.key_exists("dataset_name"):
+        if self._client.key_exists(dataset_name):
             self._dataset = self._client.get_dataset(dataset_name)
             self._append = True
         else:
