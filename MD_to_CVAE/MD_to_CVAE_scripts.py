@@ -1,11 +1,10 @@
-from numpy.lib.twodim_base import triu_indices
 import torch
 
 def triu_to_full(cm0):
     num_res = int(torch.ceil(torch.tensor([((len(cm0) * 2) ** 0.5)])).item())
     iu1 = torch.triu_indices(num_res, num_res, 1)
 
-    cm_full = torch.zeros((num_res, num_res), dtype=cm0.dtype)
+    cm_full = torch.zeros((num_res, num_res), dtype=cm0.dtype, device=cm0.device)
     cm_full[iu1[0,:],iu1[1,:]] = cm0
     cm_full[iu1[1,:],iu1[0,:]] = cm0
     cm_full.fill_diagonal_(1.)

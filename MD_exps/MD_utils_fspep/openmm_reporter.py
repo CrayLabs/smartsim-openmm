@@ -1,7 +1,7 @@
-import simtk.openmm.app as app
-import simtk.openmm as omm
+import time
 import simtk.unit as u 
-from smartredis import Client
+from smartredis import Client, Dataset
+from smartredis.util import Dtypes
 
 import numpy as np 
 import h5py 
@@ -39,14 +39,32 @@ class ContactMapReporter(object):
         self._file.flush()
 
 class SmartSimContactMapReporter(object):
-    def __init__(self, dataset_name, reportInterval):
+    def __init__(self, worker_id, reportInterval):
         self._reportInterval = reportInterval
         self._client = Client(cluster=True)
-        self._dataset_name = dataset_name
+        dataset_name = "openmm_" + str(worker_id)
+        try:
+            self._dataset = self._client.get_dataset(dataset_name)
+            self._append = True
+        except:
+            self._dataset = Dataset(dataset_name)
+            self._append = False
         self._out = np.empty(shape=(2,0))
+        self._timestamp = str(time.time())
         print(os.environ["SSDB"])
 
     def __del__(self):
+        if not self._append:
+            self._dataset.add_tensor(self._timestamp, self._out)
+        else:
+            dtype = Dtypes.tensor_from_numpy(self._out)
+            self._dataset.add_tensor(self._timestamp, self._out, dtype)
+    
+        self._dataset.add_meta_string("timestamps", self._timestamp)
+        if not self._append:
+            self._client.put_dataset(self._dataset)
+        else:
+            super(type(self._client), self._client).put_dataset(self._dataset)
         print(f"Destroying reporter, final size of contact map: {self._out.shape}")
 
     def describeNextReport(self, simulation):
@@ -65,5 +83,4 @@ class SmartSimContactMapReporter(object):
         new_shape = (len(contact_map), self._out.shape[1] + 1) 
         self._out.resize(new_shape)
         self._out[:, new_shape[1]-1] = contact_map
-        self._client.put_tensor(self._dataset_name, self._out)
         # TODO: move aggregation to here?
