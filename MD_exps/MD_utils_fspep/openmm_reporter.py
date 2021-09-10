@@ -41,31 +41,46 @@ class ContactMapReporter(object):
 class SmartSimContactMapReporter(object):
     def __init__(self, worker_id, reportInterval):
         self._reportInterval = reportInterval
-        self._client = Client(cluster=True)
-        dataset_name = "openmm_" + str(worker_id)
-        try:
+        self._client = Client(address=None, cluster=True)
+        self._worker_id = worker_id
+        dataset_name = "openmm_" + str(self._worker_id)
+        if self._client.key_exists("dataset_name"):
             self._dataset = self._client.get_dataset(dataset_name)
             self._append = True
-        except:
+        else:
             self._dataset = Dataset(dataset_name)
             self._append = False
         self._out = np.empty(shape=(2,0))
         self._timestamp = str(time.time())
-        print(os.environ["SSDB"])
+        if not self._client.model_exists("cvae_script"):
+            self._client.set_script_from_file("cvae_script",
+                "/lus/scratch/arigazzi/smartsim-dev/smartsim-openmm/MD_to_CVAE/MD_to_CVAE_scripts.py",
+                device="CPU")
 
     def __del__(self):
         if not self._append:
             self._dataset.add_tensor(self._timestamp, self._out)
+            self._client.put_tensor(f"batch_{self._worker_id}", self._out)
+            print(f"Destroying reporter, final size of contact map: {self._out.shape}")
         else:
             dtype = Dtypes.tensor_from_numpy(self._out)
             self._dataset.add_tensor(self._timestamp, self._out, dtype)
+            batch = self._client.get_tensor(f"batch_{self._worker_id}")
+            batch = np.concatenate((batch, self._out), axis=1)
+            self._client.delete_tensor(f"batch_{self._worker_id}")
+            self._client.put_tensor(f"batch_{self._worker_id}", batch)
+            print(f"Destroying reporter, final size of contact map: {batch.shape}")
     
         self._dataset.add_meta_string("timestamps", self._timestamp)
+        print(self._dataset.get_meta_strings("timestamps"))
         if not self._append:
             self._client.put_dataset(self._dataset)
         else:
             super(type(self._client), self._client).put_dataset(self._dataset)
-        print(f"Destroying reporter, final size of contact map: {self._out.shape}")
+        self._client.run_script("cvae_script",
+                                "cm_to_cvae",
+                                f"batch_{self._worker_id}",
+                                f"preproc_{self._worker_id}")
 
     def describeNextReport(self, simulation):
         steps = self._reportInterval - simulation.currentStep%self._reportInterval

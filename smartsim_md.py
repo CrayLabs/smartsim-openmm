@@ -104,6 +104,7 @@ class TrainingPipeline:
             md_run_settings.set_nodes(1)
             md_run_settings.set_tasks(1)
             md_run_settings.set_tasks_per_node(1)
+            md_run_settings.add_exe_args(["--worker_id", str(i)])
 
             # pick initial point of simulation 
             if initial_MD or i >= len(outlier_list): 
