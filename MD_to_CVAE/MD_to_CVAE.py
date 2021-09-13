@@ -34,18 +34,16 @@ cvae_data_length = len(cvae_input)
 client = Client(None, False)
 batches = None
 for i  in range(2):
-    key = f"batch_{i}"
+    key = f"preproc_{i}"
     if client.key_exists(key):
         if batches is None:
             batches = client.get_tensor(key)
         else:
             new_batch = client.get_tensor(key)
-            batches = np.concatenate((batches, new_batch), axis=1)
+            batches = np.concatenate((batches, new_batch), axis=0)
 
-batches = np.sort(batches, axis=0)
-cm_raw = np.sort(np.hstack([cm_data_list[:,:] for cm_data_list in cm_data_lists]), axis=0)
 
-print(np.linalg.norm(batches-cm_raw))
+print(np.linalg.norm(batches-cvae_input))
 
 # # Write the traj info 
 omm_log = 'openmm_log.txt' 

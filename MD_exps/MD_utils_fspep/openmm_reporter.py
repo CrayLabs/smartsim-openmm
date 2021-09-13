@@ -69,14 +69,11 @@ class SmartSimContactMapReporter(object):
             self._dataset.add_tensor(self._timestamp, self._out, dtype)
 
             batch = self._client.get_tensor(f"batch_{self._worker_id}")
-            batch = np.concatenate((batch, out), axis=1).copy()
+            batch = np.hstack((batch, out)).copy()
             self._client.delete_tensor(f"batch_{self._worker_id}")
             self._client.put_tensor(f"batch_{self._worker_id}", batch)
 
-            stored = self._client.get_tensor(f"batch_{self._worker_id}")
-            print("NORM:\n", np.linalg.norm(stored-batch))
-
-            print(f"Destroying reporter, final size of contact map: {batch.shape}")
+            print(f"Destroying reporter, final size of contact map: {out.shape}")
     
         self._dataset.add_meta_string("timestamps", self._timestamp)
         print(self._dataset.get_meta_strings("timestamps"))
