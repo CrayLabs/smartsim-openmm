@@ -24,11 +24,11 @@ HOME = os.environ.get('HOME')
 conda_path = os.environ.get('CONDA_PREFIX')
 base_path = os.path.abspath('.')
 conda_sh = '/lus/scratch/arigazzi/anaconda3/etc/profile.d/conda.sh'
-
+INTERFACE="ipogif0"
 
 if TINY:
-    LEN_initial = 5
-    LEN_iter = 5
+    LEN_initial = 4
+    LEN_iter = 4
     md_counts = gpus_per_node*2
     ml_counts = 2
     RETRAIN_FREQ = 2
@@ -59,7 +59,7 @@ class TrainingPipeline:
             print("Found orchestrator checkpoint, reconnecting")
             self.orchestrator = self.exp.reconnect_orchestrator(checkpoint)
         else:
-            self.orchestrator = SlurmOrchestrator(db_nodes=1, time="02:00:00", interface="ib0")
+            self.orchestrator = SlurmOrchestrator(db_nodes=1, time="02:00:00", interface=INTERFACE)
             self.exp.generate(self.orchestrator)
             self.exp.start(self.orchestrator)
         return
@@ -88,9 +88,9 @@ class TrainingPipeline:
         # MD tasks
         time_stamp = int(time.time())
 
-        md_batch_args = {"nodes": node_counts, "ntasks-per-node": 1, "constraint": "V100", "exclusive": None}
+        md_batch_args = {"nodes": node_counts, "ntasks-per-node": 1, "constraint": "P100", "exclusive": None}
         md_batch_settings = SbatchSettings(time="01:00:00", batch_args=md_batch_args)
-        md_batch_settings.set_partition("spider")
+        # md_batch_settings.set_partition("spider")
         md_batch_settings.add_preamble(f'. {conda_sh}')
         md_batch_settings.add_preamble(f'conda activate {conda_path}')
         md_batch_settings.add_preamble('module load cudatoolkit')
@@ -164,8 +164,8 @@ class TrainingPipeline:
         """
 
         time_stamp = int(time.time())
-        ml_batch_settings = SbatchSettings(time="02:00:00", batch_args={"nodes": num_ML, "ntasks-per-node": 1, "constraint": "V100"})
-        ml_batch_settings.set_partition("spider")
+        ml_batch_settings = SbatchSettings(time="02:00:00", batch_args={"nodes": num_ML, "ntasks-per-node": 1, "constraint": "P100"})
+        # ml_batch_settings.set_partition("spider")
         ml_batch_settings.add_preamble([f'. {conda_sh}', 'module load cudatoolkit', f'conda activate {conda_path}' ])
         python_path = os.getenv("PYTHONPATH", "")
         python_path = f"{base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:" + python_path
@@ -203,12 +203,12 @@ class TrainingPipeline:
         interfacing_run_settings.set_nodes(1)
         interfacing_run_settings.set_tasks_per_node(1)
         interfacing_run_settings.set_tasks(1)
-        interfacing_batch_settings = SbatchSettings(time="00:10:00", batch_args = {"nodes": node_counts, "ntasks-per-node": 1, "constraint": "V100"})
+        interfacing_batch_settings = SbatchSettings(time="00:10:00", batch_args = {"nodes": node_counts, "ntasks-per-node": 1, "constraint": "P100"})
         interfacing_batch_settings.add_preamble([f'. {conda_sh}',
                                                  'module load cudatoolkit',
                                                  f'conda activate {conda_path}',
                                                 ])
-        interfacing_batch_settings.set_partition("spider")
+        # interfacing_batch_settings.set_partition("spider")
         # Scanning for outliers and prepare the next stage of MDs 
         
         interfacing_model = self.exp.create_model('SmartSim-Outlier_search', run_settings=interfacing_run_settings)

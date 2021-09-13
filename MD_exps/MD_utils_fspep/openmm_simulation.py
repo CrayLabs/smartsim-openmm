@@ -5,7 +5,7 @@ import simtk.unit as u
 import parmed as pmd
 import random
 import time
-from openmm_reporter import ContactMapReporter, SmartSimContactMapReporter
+from .openmm_reporter import ContactMapReporter, SmartSimContactMapReporter
 
 
 def openmm_simulate_charmm_nvt(top_file, pdb_file, worker_id, check_point=None, GPU_index=0,  

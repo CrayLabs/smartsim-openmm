@@ -2,7 +2,8 @@ import os, sys, errno
 import argparse 
 from CVAE import run_cvae  
 
-
+from smartsim.tf import freeze_model
+from smartredis import Client
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-f", default='cvae_input.h5', help="Input: contact map h5 file")
@@ -23,6 +24,9 @@ if not os.path.exists(cvae_input):
 
 if __name__ == '__main__': 
     cvae = run_cvae(gpu_id, cvae_input, hyper_dim=hyper_dim)
+
+    model_path, inputs, outputs = freeze_model(cvae, os.getcwd(), "cvae.pb")
+    
 
     model_weight = os.path.join(model_dir, 'cvae_weight.h5')
     model_file = os.path.join(model_dir, 'cvae_model.h5')
