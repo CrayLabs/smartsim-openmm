@@ -4,7 +4,7 @@ import h5py
 import errno 
 import MDAnalysis as mda 
 from cvae.CVAE import CVAE
-from keras import backend as K 
+from tensorflow.keras import backend as K 
 from sklearn.cluster import DBSCAN 
 
 def triu_to_full(cm0):

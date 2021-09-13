@@ -22,7 +22,7 @@ def CVAE(input_shape, latent_dim=3):
     autoencoder.model.summary()
     return autoencoder
 
-def run_cvae(gpu_id, cm_file, hyper_dim=3, epochs=100): 
+def run_cvae(gpu_id, cm_file, hyper_dim=3, epochs=10): 
     # read contact map from h5 file 
     cm_h5 = h5py.File(cm_file, 'r', libver='latest', swmr=True)
     cm_data_input = cm_h5[u'contact_maps'] 

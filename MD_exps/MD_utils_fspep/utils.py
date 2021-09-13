@@ -6,7 +6,7 @@ import subprocess, errno, os
 import warnings
 from sklearn.cluster import DBSCAN
 import MDAnalysis as mda
-from keras import backend as K
+from tensorflow.keras import backend as K
 from molecules.utils.matrix_op import triu_to_full
 
 from CVAE import CVAE

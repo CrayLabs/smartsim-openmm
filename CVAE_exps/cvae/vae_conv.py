@@ -7,13 +7,13 @@ Reference: "Auto-Encoding Variational Bayes" (https://arxiv.org/abs/1312.6114)
 '''
 
 import numpy as np
-from keras.layers import Input, Dense, Lambda, Flatten, Reshape, Dropout
-from keras.layers import Convolution2D, Conv2DTranspose
-from keras.models import Model
-from keras.optimizers import SGD, Adam, RMSprop, Adadelta
-from keras.callbacks import Callback, ModelCheckpoint
-from keras import backend as K
-from keras import objectives
+from tensorflow.keras.layers import Input, Dense, Lambda, Flatten, Reshape, Dropout
+from tensorflow.keras.layers import Convolution2D, Conv2DTranspose
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import SGD, Adam, RMSprop, Adadelta
+from tensorflow.keras.callbacks import Callback, ModelCheckpoint
+from tensorflow.keras import backend as K
+from tensorflow.keras import metrics
 import warnings
 
 # resolves the issue related to CUDNN_STATUS_INTERNAL_ERROR
@@ -226,7 +226,7 @@ class conv_variational_autoencoder(object):
         '''
         input_flat = K.flatten(input)
         output_flat = K.flatten(output)
-        xent_loss = self.image_size[0] * self.image_size[1] * objectives.binary_crossentropy(input_flat,output_flat)
+        xent_loss = self.image_size[0] * self.image_size[1] * metrics.binary_crossentropy(input_flat,output_flat)
         kl_loss = - 0.5 * K.mean(1 + self.z_log_var - K.square(self.z_mean) 
                   - K.exp(self.z_log_var), axis=-1)
         return xent_loss + kl_loss

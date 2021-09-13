@@ -4,6 +4,8 @@ import numpy as np
 from glob import glob
 from utils import cm_to_cvae, read_h5py_file
 
+from smartredis import Client, Dataset
+
 parser = argparse.ArgumentParser()
 parser.add_argument("-f", "--sim_path", dest='f', help="Input: OpenMM simulation path") 
 parser.add_argument("-o", help="Output: CVAE 2D contact map h5 input file")
@@ -27,6 +29,23 @@ cm_data_lists = [read_h5py_file(cm_file) for cm_file in cm_files]
 cvae_input = cm_to_cvae(cm_data_lists)
 train_data_length = [cm_data.shape[1] for cm_data in cm_data_lists]
 cvae_data_length = len(cvae_input)
+
+# SMARTSIM CHECK
+client = Client(None, False)
+batches = None
+for i  in range(2):
+    key = f"batch_{i}"
+    if client.key_exists(key):
+        if batches is None:
+            batches = client.get_tensor(key)
+        else:
+            new_batch = client.get_tensor(key)
+            batches = np.concatenate((batches, new_batch), axis=1)
+
+batches = np.sort(batches, axis=0)
+cm_raw = np.sort(np.hstack([cm_data_list[:,:] for cm_data_list in cm_data_lists]), axis=0)
+
+print(np.linalg.norm(batches-cm_raw))
 
 # # Write the traj info 
 omm_log = 'openmm_log.txt' 

@@ -19,7 +19,7 @@ and then to install packages in the following way:
 pip install tensorflow==2.4.2 keras==2.4.3 numpy==1.19.2 cython smartsim sklearn
 conda install -c conda-forge openmm
 pip install MDAnalysis MDAnalysisTests parmed --force
-conda install git-lfs
+conda install git-lfs pytables
 ```
 
 ## System-dependent settings

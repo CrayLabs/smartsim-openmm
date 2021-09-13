@@ -9,6 +9,7 @@ import os
 
 from MDAnalysis.analysis import distances
 
+
 class ContactMapReporter(object):
     def __init__(self, file, reportInterval):
         self._file = h5py.File(file, 'w', libver='latest')
@@ -17,7 +18,9 @@ class ContactMapReporter(object):
         self._reportInterval = reportInterval
 
     def __del__(self):
+        print(f"Destroying reporter, final size of contact map: {self._out.shape}")
         self._file.close()
+
 
     def describeNextReport(self, simulation):
         steps = self._reportInterval - simulation.currentStep%self._reportInterval
@@ -29,7 +32,6 @@ class ContactMapReporter(object):
             if atom.name == 'CA':
                 ca_indices.append(atom.index)
         positions = np.array(state.getPositions().value_in_unit(u.angstrom))
-        # time = int(np.round(state.getTime().value_in_unit(u.picosecond)))
         positions_ca = positions[ca_indices].astype(np.float32)
         distance_matrix = distances.self_distance_array(positions_ca)
         contact_map = (distance_matrix < 8.0) * 1.0 
@@ -41,16 +43,16 @@ class ContactMapReporter(object):
 class SmartSimContactMapReporter(object):
     def __init__(self, worker_id, reportInterval):
         self._reportInterval = reportInterval
-        self._client = Client(address=None, cluster=True)
+        self._client = Client(address=None, cluster=False)
         self._worker_id = worker_id
         dataset_name = "openmm_" + str(self._worker_id)
         if self._client.key_exists(dataset_name):
-            self._dataset = self._client.get_dataset(dataset_name)
-            self._append = True
+           self._dataset = self._client.get_dataset(dataset_name)
+           self._append = True
         else:
-            self._dataset = Dataset(dataset_name)
-            self._append = False
-        self._out = np.empty(shape=(2,0))
+           self._dataset = Dataset(dataset_name)
+           self._append = False
+        self._out = None
         self._timestamp = str(time.time())
         if not self._client.model_exists("cvae_script"):
             self._client.set_script_from_file("cvae_script",
@@ -58,17 +60,22 @@ class SmartSimContactMapReporter(object):
                 device="CPU")
 
     def __del__(self):
+        out = np.transpose(self._out).copy()
         if not self._append:
             self._dataset.add_tensor(self._timestamp, self._out)
-            self._client.put_tensor(f"batch_{self._worker_id}", self._out)
-            print(f"Destroying reporter, final size of contact map: {self._out.shape}")
+            self._client.put_tensor(f"batch_{self._worker_id}", out)
         else:
             dtype = Dtypes.tensor_from_numpy(self._out)
             self._dataset.add_tensor(self._timestamp, self._out, dtype)
+
             batch = self._client.get_tensor(f"batch_{self._worker_id}")
-            batch = np.concatenate((batch, self._out), axis=1)
+            batch = np.concatenate((batch, out), axis=1).copy()
             self._client.delete_tensor(f"batch_{self._worker_id}")
             self._client.put_tensor(f"batch_{self._worker_id}", batch)
+
+            stored = self._client.get_tensor(f"batch_{self._worker_id}")
+            print("NORM:\n", np.linalg.norm(stored-batch))
+
             print(f"Destroying reporter, final size of contact map: {batch.shape}")
     
         self._dataset.add_meta_string("timestamps", self._timestamp)
@@ -95,7 +102,8 @@ class SmartSimContactMapReporter(object):
         positions_ca = positions[ca_indices].astype(np.float32)
         distance_matrix = distances.self_distance_array(positions_ca)
         contact_map = (distance_matrix < 8.0) * 1.0 
-        new_shape = (len(contact_map), self._out.shape[1] + 1) 
-        self._out.resize(new_shape)
-        self._out[:, new_shape[1]-1] = contact_map
-        # TODO: move aggregation to here?
+        if self._out is None:
+            self._out = np.empty(shape=(1, len(contact_map)))
+            self._out[0,:] = np.transpose(contact_map)
+        else:
+            self._out = np.vstack((self._out, np.transpose(contact_map)))

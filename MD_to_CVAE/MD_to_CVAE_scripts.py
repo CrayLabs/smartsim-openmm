@@ -1,3 +1,4 @@
+#import torch
 
 def triu_to_full(cm0):
     num_res = int(torch.ceil(torch.tensor([((len(cm0) * 2) ** 0.5)])).item())
