@@ -60,16 +60,16 @@ class SmartSimContactMapReporter(object):
                 device="CPU")
 
     def __del__(self):
-        out = np.transpose(self._out).copy()
+        out = np.transpose(self._out).copy().astype(np.float32)
         if not self._append:
             self._dataset.add_tensor(self._timestamp, self._out)
             self._client.put_tensor(f"batch_{self._worker_id}", out)
         else:
-            dtype = Dtypes.tensor_from_numpy(self._out)
-            self._dataset.add_tensor(self._timestamp, self._out, dtype)
+            dtype = Dtypes.tensor_from_numpy(out)
+            self._dataset.add_tensor(self._timestamp, out, dtype)
 
             batch = self._client.get_tensor(f"batch_{self._worker_id}")
-            batch = np.hstack((batch, out)).copy()
+            batch = np.hstack((batch, out)).copy().astype(np.float32)
             self._client.delete_tensor(f"batch_{self._worker_id}")
             self._client.put_tensor(f"batch_{self._worker_id}", batch)
 

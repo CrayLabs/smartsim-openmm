@@ -1,12 +1,11 @@
 import os, sys, h5py
-
-# from keras.optimizers import RMSprop
+import numpy as np
+from smartredis import Client
 
 from CVAE_exps.cvae.vae_conv_new import conv_variational_autoencoder
-#from CVAE_exps.cvae.vae_conv_new import CVAE as kCVAE # import conv_variational_autoencoder
 
 def CVAE(input_shape, latent_dim=3): 
-    image_size = input_shape[:-1]
+    image_size = input_shape[1:-1]
     channels = input_shape[-1]
     conv_layers = 4
     feature_maps = [64,64,64,64]
@@ -21,13 +20,27 @@ def CVAE(input_shape, latent_dim=3):
     strides = strides[0:conv_layers]
     autoencoder = conv_variational_autoencoder(image_size,channels,conv_layers,feature_maps,
                 filter_shapes,strides,dense_layers,dense_neurons,dense_dropouts,latent_dim); 
-#     autoencoder.model.summary()
+
     return autoencoder
 
 def run_cvae(gpu_id, cm_file, hyper_dim=3, epochs=10): 
     # read contact map from h5 file 
     cm_h5 = h5py.File(cm_file, 'r', libver='latest', swmr=True)
     cm_data_input = cm_h5[u'contact_maps'] 
+
+    client = Client(None, False)
+    batches = None
+    for i  in range(2):
+        key = f"preproc_{i}"
+        if client.key_exists(key):
+            if batches is None:
+                batches = client.get_tensor(key)
+            else:
+                new_batch = client.get_tensor(key)
+                batches = np.concatenate((batches, new_batch), axis=0)
+
+    print(np.linalg.norm(cm_data_input-batches))
+    cm_data_input = batches
 
     # splitting data into train and validation
     train_val_split = int(0.8 * len(cm_data_input))
@@ -38,10 +51,8 @@ def run_cvae(gpu_id, cm_file, hyper_dim=3, epochs=10):
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"]=str(gpu_id) 
     
-    cvae = CVAE(input_shape[1:], hyper_dim) 
-    
-#     callback = EmbeddingCallback(cm_data_train, cvae)
-    # batch_size = input_shape[0]/100
+    cvae = CVAE(input_shape, hyper_dim) 
+
     cvae.train(cm_data_train, validation_data=cm_data_val, batch_size = input_shape[0]/100, epochs=epochs) 
     
     return cvae 

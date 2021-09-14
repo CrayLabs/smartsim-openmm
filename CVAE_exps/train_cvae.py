@@ -26,19 +26,29 @@ if not os.path.exists(cvae_input):
 if __name__ == '__main__': 
     cvae = run_cvae(gpu_id, cvae_input, hyper_dim=hyper_dim)
 
-    model_path, inputs, outputs = freeze_model(cvae.model, os.getcwd(), "cvae.pb")
+    model_path, inputs, outputs = freeze_model(cvae, os.getcwd(), "cvae.pb")
     prefix = os.path.split(os.getcwd())[1]
 
     client = Client(None, False)
     client.set_model_from_file(
         prefix+"_cvae", model_path, "TF", device="CPU", inputs=inputs, outputs=outputs
     )
-    client.set_tensor(prefix+"_loss", cvae.history.losses)
+    client.put_tensor(prefix+"_loss", np.array(cvae.history_call.losses))
 
     model_weight = 'cvae_weight.h5' 
     model_file = 'cvae_model.h5' 
     loss_file = 'loss.npy' 
 
-    cvae.model.save_weights(model_weight)
-    cvae.save(model_file)
-    np.save(loss_file, cvae.history.losses) 
+    batch = client.get_tensor("preproc_0").astype(np.float32)
+
+    client.run_model(prefix+"_cvae", ["preproc_0"], ["output"])
+    output = client.get_tensor("output")
+
+    output_here = cvae(batch)
+
+    print(np.mean(output_here-output))
+
+    cvae.save(model_weight)
+    # cvae.save(model_file)
+    np.save(loss_file, cvae.history_call.losses) 
+    

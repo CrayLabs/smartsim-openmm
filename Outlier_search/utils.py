@@ -83,8 +83,8 @@ def make_dir_p(path_name):
 def outliers_from_cvae(model_weight, cvae_input, hyper_dim=3, eps=0.35): 
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"]=str(0)  
-    cvae = CVAE(cvae_input.shape[1:], hyper_dim) 
-    cvae.model.load_weights(model_weight)
+    cvae = CVAE(cvae_input.shape, hyper_dim) 
+    cvae.load_weights(model_weight)
     cm_predict = cvae.return_embeddings(cvae_input) 
     db = DBSCAN(eps=eps, min_samples=10).fit(cm_predict)
     db_label = db.labels_
@@ -95,8 +95,8 @@ def outliers_from_cvae(model_weight, cvae_input, hyper_dim=3, eps=0.35):
 def predict_from_cvae(model_weight, cvae_input, hyper_dim=3): 
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"]=str(0)  
-    cvae = CVAE(cvae_input.shape[1:], hyper_dim) 
-    cvae.model.load_weights(model_weight)
+    cvae = CVAE(cvae_input.shape, hyper_dim) 
+    cvae.load_weights(model_weight)
     cm_predict = cvae.return_embeddings(cvae_input) 
     del cvae 
     K.clear_session()

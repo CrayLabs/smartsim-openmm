@@ -1,13 +1,14 @@
 import os, h5py
 import numpy as np
 
-from vae_conv import conv_variational_autoencoder
+from vae_conv_new import conv_variational_autoencoder
 
+import tensorflow as tf
 from smartredis import Client
 
 
 def CVAE(input_shape, latent_dim=3): 
-    image_size = input_shape[:-1]
+    image_size = input_shape[1:-1]
     channels = input_shape[-1]
     conv_layers = 4
     feature_maps = [64,64,64,64]
@@ -21,8 +22,8 @@ def CVAE(input_shape, latent_dim=3):
     filter_shapes = filter_shapes[0:conv_layers]
     strides = strides[0:conv_layers]
     autoencoder = conv_variational_autoencoder(image_size,channels,conv_layers,feature_maps,
-               filter_shapes,strides,dense_layers,dense_neurons,dense_dropouts,latent_dim) 
-    autoencoder.model.summary()
+               filter_shapes,strides,dense_layers,dense_neurons,dense_dropouts,latent_dim)
+
     return autoencoder
 
 def run_cvae(gpu_id, cm_file, hyper_dim=3, epochs=10): 
@@ -51,9 +52,9 @@ def run_cvae(gpu_id, cm_file, hyper_dim=3, epochs=10):
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"]=str(gpu_id) 
     
-    cvae = CVAE(input_shape[1:], hyper_dim) 
+    cvae = CVAE(input_shape, hyper_dim) 
     
     cvae.train(cm_data_train, validation_data=cm_data_val, batch_size =
-            input_shape[0]//100, epochs=epochs) 
+               input_shape[0]//100, epochs=epochs)
     
     return cvae 
