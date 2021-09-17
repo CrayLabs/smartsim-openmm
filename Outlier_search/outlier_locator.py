@@ -20,6 +20,8 @@ parser.add_argument("-m", "--md", help="Input: MD simulation directory")
 parser.add_argument("-c", "--cvae", help="Input: CVAE model directory")
 parser.add_argument("-p", "--pdb", help="Input: pdb file") 
 parser.add_argument("-r", "--ref", default=None, help="Input: Reference pdb for RMSD") 
+parser.add_argument("--num_md_workers", type=int, default=2) 
+parser.add_argument("--num_ml_workers", type=int, default=2)
 
 args = parser.parse_args()
 
@@ -57,11 +59,11 @@ for i in range(len(model_weights)):
 print ("Using model {} with loss {}".format(model_best, loss_model_best))
 
 client = Client(None, False)
-num_ml_workers = 2
+#num_ml_workers = 2
 best_worker_id = None
 best_loss = None
 best_prefix = None
-for worker_id in range(num_ml_workers):
+for worker_id in range(args.num_ml_workers):
     dataset = client.get_dataset(f"cvae_{worker_id}")
     prefixes = dataset.get_meta_strings("prefixes")
     for prefix in prefixes:
@@ -104,8 +106,8 @@ print ('Model latent dimension: %d' % model_dim )
 # Get the predicted embeddings 
 cm_predict = predict_from_cvae(model_best, cvae_input, hyper_dim=model_dim) 
 
-num_md_workers = 2
-for id in range(num_md_workers):
+# num_md_workers = 2
+for id in range(args.num_md_workers):
     latent_name = f"latent_{id}"
     if client.tensor_exists(latent_name):
         client.delete_tensor(latent_name)
@@ -114,7 +116,7 @@ for id in range(num_md_workers):
     client.run_model(best_prefix+"_encoder", [f"preproc_{id}"], [latent_name+"_mean", latent_name+"_var", latent_name])
 
 cm_predict_smartsim = client.get_tensor("latent_0")
-for id in range(1, num_md_workers):
+for id in range(1, args.num_md_workers):
     cm_predict_smartsim = np.vstack([cm_predict_smartsim, client.get_tensor(f"latent_{id}")])
 
 print("MEAN ABS ERROR", np.mean(np.abs(cm_predict-cm_predict_smartsim)))

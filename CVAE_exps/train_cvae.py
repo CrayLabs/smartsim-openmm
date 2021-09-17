@@ -20,6 +20,7 @@ parser.add_argument("--worker_id", type=int, help="Worker ID")
 # parser.add_argument("-o", help="output: cvae weight file. (Keras cannot load model directly, will check again...)")
 parser.add_argument("-d", "--dim", default=3, help="Number of dimensions in latent space")
 parser.add_argument("-gpu", default=0, help="gpu_id")
+parser.add_argument("--num_md_workers", default=2, type=int)
 
 args = parser.parse_args()
 
@@ -51,7 +52,7 @@ def save_model_to_db(client, model, prefix):
 
 if __name__ == '__main__': 
 
-    cvae = run_cvae(gpu_id, cvae_input, hyper_dim=hyper_dim)
+    cvae = run_cvae(gpu_id, cvae_input, hyper_dim=hyper_dim, num_md_workers=args.num_md_workers)
     # model_path, inputs, outputs = freeze_model(cvae, os.getcwd(), "cvae.pb")
     prefix = os.path.split(os.getcwd())[1]
 

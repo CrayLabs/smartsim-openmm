@@ -26,14 +26,14 @@ def CVAE(input_shape, latent_dim=3):
 
     return autoencoder
 
-def run_cvae(gpu_id, cm_file, hyper_dim=3, epochs=10): 
+def run_cvae(gpu_id, cm_file, hyper_dim=3, epochs=100, num_md_workers=2): 
     # read contact map from h5 file 
     # cm_h5 = h5py.File(cm_file, 'r', libver='latest', swmr=True)
     # cm_data_input = cm_h5[u'contact_maps'] 
 
     client = Client(None, False)
     batches = None
-    for i  in range(2):
+    for i  in range(num_md_workers):
         key = f"preproc_{i}"
         if client.key_exists(key):
             if batches is None:

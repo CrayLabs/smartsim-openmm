@@ -9,6 +9,7 @@ from smartredis import Client, Dataset
 parser = argparse.ArgumentParser()
 parser.add_argument("-f", "--sim_path", dest='f', help="Input: OpenMM simulation path") 
 parser.add_argument("-o", help="Output: CVAE 2D contact map h5 input file")
+parser.add_argument("--num_workers", type=int, default=2)
 
 # Let's say I have a list of h5 file names 
 args = parser.parse_args() 
@@ -33,7 +34,7 @@ cvae_data_length = len(cvae_input)
 # SMARTSIM CHECK
 client = Client(None, False)
 batches = None
-for i  in range(2):
+for i  in range(args.num_workers):
     key = f"preproc_{i}"
     if client.key_exists(key):
         if batches is None:
