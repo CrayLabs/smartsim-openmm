@@ -1,4 +1,3 @@
-from typing_extensions import runtime
 from smartsim.database import SlurmOrchestrator
 from smartsim.settings import SrunSettings
 from smartsim import Experiment
@@ -7,16 +6,16 @@ import os
 
 
 exp = Experiment(name="test-dataset", launcher="slurm")
-orchestrator = SlurmOrchestrator(db_nodes=1, time="02:00:00", interface="ipogif0")
+orchestrator = SlurmOrchestrator(db_nodes=1, time="00:10:00", interface="ipogif0")
 exp.generate(orchestrator)
 exp.start(orchestrator)
 
 base_path = os.path.abspath('.')
 
-alloc = slurm.get_allocation()
+alloc = slurm.get_allocation(time="00:08:00")
 
 run_settings = SrunSettings(exe=f"python",
-                            exe_args=f"{base_path}/dataset_client.py", alloc=alloc)
+                            exe_args=f"{base_path}/test_cvae.py", alloc=alloc)
 
 model = exp.create_model("test_model", run_settings=run_settings)
 

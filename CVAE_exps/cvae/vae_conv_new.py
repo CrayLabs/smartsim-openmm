@@ -36,14 +36,18 @@ class LossHistory(Callback):
 		self.val_losses.append(logs.get("val_loss"))
 
 class Sampling(Layer):
-    """Uses (z_mean, z_log_var) to sample z, the vector encoding a digit."""
-
-    def call(self, inputs):
-        z_mean, z_log_var = inputs
-        batch = K.shape(z_mean)[0]
-        dim = K.shape(z_mean)[1]
-        epsilon = K.random_normal(shape=(batch, dim))
-        return z_mean + K.exp(0.5 * z_log_var) * epsilon
+	"""Uses (z_mean, z_log_var) to sample z, the vector encoding a digit."""
+	def __init__(self, eps_mean=0.0, eps_std=1.0):
+		super().__init__()
+		self.eps_mean = eps_mean
+		self.eps_std = eps_std
+	def call(self, inputs):
+		z_mean, z_log_var = inputs
+		batch = K.shape(z_mean)[0]
+		dim = K.shape(z_mean)[1]
+		epsilon = K.random_normal(shape=(batch, dim),mean=self.eps_mean,
+									stddev=self.eps_std)
+		return z_mean + K.exp(0.5 * z_log_var) * epsilon
 
 def encoder_decoder(latent_dim,
                    channels, 
@@ -55,7 +59,9 @@ def encoder_decoder(latent_dim,
                    conv_layers,
 				   dense_layers,
                    dense_neurons,
-                   dense_dropouts):
+                   dense_dropouts,
+				   eps_mean,
+				   eps_std):
 	if K.image_data_format() == 'th' or K.image_data_format() == 'channels_first':
 		encoder_inputs = Input(shape=(channels,image_size[0],image_size[1]))
 	else:
@@ -80,7 +86,7 @@ def encoder_decoder(latent_dim,
 
 	z_mean = Dense(latent_dim)(encode_dense[-1])
 	z_log_var = Dense(latent_dim)(encode_dense[-1]) 
-	z = Sampling()([z_mean, z_log_var])
+	z = Sampling(eps_mean, eps_std)([z_mean, z_log_var])
 	encoder = Model(encoder_inputs, [z_mean, z_log_var, z], name="encoder")
 
 
@@ -200,14 +206,12 @@ class conv_variational_autoencoder(Model):
 		if K.image_data_format() == 'channels_first' and len(even_filters) > 0:
 			warnings.warn('Even shaped filters may cause problems in Theano backend')
 
-		self.eps_mean = eps_mean
-		self.eps_std = eps_std
 		self.image_size = image_size
         
 		(self.encoder, self.decoder) = encoder_decoder(latent_dim,
 			channels, image_size, feature_maps, filter_shapes, 
 			activation, strides, conv_layers, dense_layers,
-			dense_neurons, dense_dropouts)
+			dense_neurons, dense_dropouts, eps_mean, eps_std)
 		self.total_loss_tracker = metrics.Mean(name="loss")
 		self.reconstruction_loss_tracker = metrics.Mean(
 			name="reconstruction_loss"
@@ -272,7 +276,7 @@ class conv_variational_autoencoder(Model):
 				"kl_loss": kl_loss,
 			}
 
-	def save(self,filepath):
+	def save(self, filepath):
 		'''
 		save the model weights to a file
 		
@@ -285,7 +289,7 @@ class conv_variational_autoencoder(Model):
 		'''
 		self.save_weights(filepath)
 		
-	def load(self,filepath):
+	def load(self, filepath):
 		'''
 		load model weights from a file
 		
@@ -298,7 +302,7 @@ class conv_variational_autoencoder(Model):
 		'''
 		self.load_weights(filepath)
 
-	def decode(self,data):
+	def decode(self, data):
 		'''
 		return the decodings for given data
 		
@@ -311,7 +315,7 @@ class conv_variational_autoencoder(Model):
 		'''
 		return self.decoder.predict(self.encoder.predict(data))
 
-	def return_embeddings(self,data):
+	def return_embeddings(self, data):
 		'''
 		return the embeddings for given data
 		
@@ -324,7 +328,7 @@ class conv_variational_autoencoder(Model):
 		'''
 		return self.encoder(data)[2]
 
-	def generate(self,embedding):
+	def generate(self, embedding):
 		'''
 		return a generated output given a latent embedding
 		
@@ -337,7 +341,7 @@ class conv_variational_autoencoder(Model):
 		'''
 		return self.decoder(embedding)
 
-	def call(self,inputs):
+	def call(self, inputs):
 		_, _, z = self.encoder(inputs)
 		reconstruction = self.decoder(z)
 		# reconstruction_loss = tf.reduce_mean(
