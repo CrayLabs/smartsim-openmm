@@ -32,7 +32,7 @@ if TINY:
     md_counts = gpus_per_node*2
     ml_counts = 2
     RETRAIN_FREQ = 2
-    MAX_STAGE = 4
+    MAX_STAGE = 10
 else:
     LEN_initial = 10
     LEN_iter = 10 
@@ -176,7 +176,8 @@ class TrainingPipeline:
             cvae_dir = 'cvae_runs_%.2d_%d' % (dim, time_stamp+i) 
             ml_run_settings = SrunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
                     '--h5_file', f'{self.aggregating_stage.entities[0].path}/cvae_input.h5', 
-                    '--dim', str(dim)],
+                    '--dim', str(dim),
+                    "--worker_id", str(i)],
                     env_vars={"PYTHONPATH": python_path})
             ml_run_settings.set_tasks_per_node(1)
             ml_run_settings.set_tasks(1)

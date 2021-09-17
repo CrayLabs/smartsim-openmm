@@ -8,6 +8,8 @@ from utils import predict_from_cvae, outliers_from_latent
 from utils import find_frame, write_pdb_frame, make_dir_p 
 from  MDAnalysis.analysis.rms import RMSD
 
+from smartredis import Client, Dataset
+
 # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 DEBUG = 1 
 
@@ -43,7 +45,7 @@ model_best = model_weights[0]
 loss_model_best = np.load(os.path.join(os.path.dirname(model_best), 'loss.npy'))[-1] 
 for i in range(len(model_weights)):  
     if i + 1 < len(model_weights): 
-        if int(os.path.basename(os.path.dirname(model_weights[i]))[10:12]) != int(os.path.basename(os.path.dirname(model_weights[i+1]))[10:12]):
+        if True:  # int(os.path.basename(os.path.dirname(model_weights[i]))[10:12]) != int(os.path.basename(os.path.dirname(model_weights[i+1]))[10:12]):
             loss = np.load(os.path.join(os.path.dirname(model_weights[i]), 'loss.npy'))[-1]  
             if loss < loss_model_best: 
                 model_best, loss_model_best = model_weights[i], loss 
@@ -53,6 +55,26 @@ for i in range(len(model_weights)):
             model_best, loss_model_best = model_weights[i], loss
 
 print ("Using model {} with loss {}".format(model_best, loss_model_best))
+
+client = Client(None, False)
+num_ml_workers = 2
+best_worker_id = None
+best_loss = None
+best_prefix = None
+for worker_id in range(num_ml_workers):
+    dataset = client.get_dataset(f"cvae_{worker_id}")
+    prefixes = dataset.get_meta_strings("prefixes")
+    for prefix in prefixes:
+        loss = client.get_tensor(prefix+"_loss")[-1]
+        if best_loss is None or best_loss > loss:
+            best_worker_id = worker_id
+            best_loss = loss
+            best_prefix = prefix
+
+if best_worker_id is None:
+    print("Error: no ID found")
+else:
+    print(f"Using model {best_prefix} with loss {best_loss}")
     
 # Convert everything to cvae input 
 cm_data_lists = [read_h5py_file(cm_file) for cm_file in cm_files_list] 
@@ -81,11 +103,32 @@ model_dim = int(os.path.basename(os.path.dirname(model_best))[10:12])
 print ('Model latent dimension: %d' % model_dim )
 # Get the predicted embeddings 
 cm_predict = predict_from_cvae(model_best, cvae_input, hyper_dim=model_dim) 
+
+num_md_workers = 2
+for id in range(num_md_workers):
+    latent_name = f"latent_{id}"
+    if client.tensor_exists(latent_name):
+        client.delete_tensor(latent_name)
+        client.delete_tensor(latent_name+"_mean")
+        client.delete_tensor(latent_name+"_var")
+    client.run_model(best_prefix+"_encoder", [f"preproc_{id}"], [latent_name+"_mean", latent_name+"_var", latent_name])
+
+cm_predict_smartsim = client.get_tensor("latent_0")
+for id in range(1, num_md_workers):
+    cm_predict_smartsim = np.vstack([cm_predict_smartsim, client.get_tensor(f"latent_{id}")])
+
+print("MEAN ABS ERROR", np.mean(np.abs(cm_predict-cm_predict_smartsim)))
+
+print(cm_predict[0:10,:])
+print(cm_predict_smartsim[0:10,:])
+
+cm_predict = cm_predict_smartsim
+
 # initialize eps if empty 
-if str(model_best) in eps_record.keys(): 
-    eps = eps_record[model_best] 
-else: 
-    eps = 0.2 
+if str(model_best) in eps_record.keys():
+    eps = eps_record[model_best]
+else:
+    eps = 0.2
 
 # Search the right eps for DBSCAN 
 while True: 

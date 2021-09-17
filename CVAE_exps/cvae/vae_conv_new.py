@@ -183,7 +183,7 @@ class conv_variational_autoencoder(Model):
 	def __init__(self,image_size,channels,conv_layers,feature_maps,filter_shapes,
 				strides,dense_layers,dense_neurons,dense_dropouts,latent_dim,
 				activation='relu',eps_mean=0.0,eps_std=1.0,**kwargs):
-		super(conv_variational_autoencoder, self).__init__(**kwargs)
+		super(conv_variational_autoencoder, self).__init__(name="CVAE", **kwargs)
 
 		self.history_call = LossHistory()
 
