@@ -313,7 +313,8 @@ class conv_variational_autoencoder(Model):
 		outputs:
 			numpy array of decodings for input data
 		'''
-		return self.decoder.predict(self.encoder.predict(data))
+		_, _, z = self.encoder(data)
+		return self.decoder(z)
 
 	def return_embeddings(self, data):
 		'''
@@ -326,7 +327,8 @@ class conv_variational_autoencoder(Model):
 		outputs:
 			numpy array of embeddings for input data
 		'''
-		return self.encoder(data)[2]
+		_, _, z = self.encoder(data)
+		return z
 
 	def generate(self, embedding):
 		'''
