@@ -30,16 +30,13 @@ def save_model_to_db(client, model, prefix):
     client.set_model("_".join([prefix,model.name]), model=model_serialized, tag="",
                     backend="TF", device="CPU", inputs=input_names, outputs=output_names)
 
-
-
-cm_data_train = np.ones(shape=(100,22,22,1), dtype=np.float32)
-cm_data_val = np.ones(shape=(40,22,22,1), dtype=np.float32)
+cm_data_train = np.random.rand(100,22,22,1).astype(np.float32)
+cm_data_val = np.random.rand(40,22,22,1).astype(np.float32)
 
 input_shape = cm_data_train.shape
 cvae = CVAE.CVAE(input_shape, 3)
 
 cvae.train(cm_data_train, cm_data_val, 5, 1)
-
 
 prefix = "test"
 client = Client(None, False)
@@ -47,11 +44,18 @@ save_model_to_db(client, cvae, prefix)
 save_model_to_db(client, cvae.encoder, prefix)
 
 
-first_sample = cm_data_train[0:1,:,:,:]
-client.put_tensor("samples", cm_data_train)
-
+# Change sampling to avoid randomness to run these
+client.put_tensor("samples", cm_data_val)
 client.run_model("_".join((prefix, "CVAE")), inputs=["samples"], outputs=["cvae_out"])
-print("one worked")
-client.run_model("_".join((prefix, "encoder")), inputs=["samples"], outputs=["z", "other", "third"])
-print("two worked")
+client.run_model("_".join((prefix, "encoder")), inputs=["samples"], outputs=["z_mean", "z_logvar", "z"])
 
+cvae.save("the_model.h5")
+cvae2 = CVAE.CVAE(input_shape, 3)
+cvae2.load("the_model.h5")
+
+inference1 = cvae.return_embeddings(cm_data_val)
+inference2 = cvae2.return_embeddings(cm_data_val)
+inferenceRAI = client.get_tensor("z")
+
+print(np.mean(np.abs(inference1-inference2)))
+print(np.mean(np.abs(inference1-inferenceRAI)))
