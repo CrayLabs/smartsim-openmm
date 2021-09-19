@@ -18,7 +18,7 @@ from smartsim.database import SlurmOrchestrator
 #
 
 gpus_per_node = 1  # 6 on Summit, 1 on Horizon
-TINY = True
+TINY = False
 
 HOME = os.environ.get('HOME')
 conda_path = os.environ.get('CONDA_PREFIX')
@@ -124,7 +124,7 @@ class TrainingPipeline:
                 md_run_settings.add_exe_args(['--length', str(LEN_iter)])
                               
             # Add the MD task to the simulating stage
-            md_model = self.exp.create_model(f"omm_runs_{i}_{time_stamp+i}", run_settings=md_run_settings)
+            md_model = self.exp.create_model(f"omm_runs_{i:02d}_{time_stamp+i}", run_settings=md_run_settings)
             if not (initial_MD or i >= len(outlier_list)) and (outlier_list[i].endswith('pdb') or outlier_list[i].endswith('chk')):
                 md_model.attach_generator_files(to_copy=[outlier_list[i]])
             
@@ -140,7 +140,8 @@ class TrainingPipeline:
         """ 
         aggr_run_settings = SrunSettings('python',
                                          [f'{base_path}/MD_to_CVAE/MD_to_CVAE.py', 
-                                          '--sim_path', f'{self.md_stage.path}'])
+                                          '--sim_path', f'{self.md_stage.path}',
+                                          '--num_workers', str(md_counts)])
         aggr_run_settings.set_tasks(1)
         aggr_run_settings.set_nodes(1)
         aggr_run_settings.set_tasks_per_node(1)
@@ -177,7 +178,8 @@ class TrainingPipeline:
             ml_run_settings = SrunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
                     '--h5_file', f'{self.aggregating_stage.entities[0].path}/cvae_input.h5', 
                     '--dim', str(dim),
-                    "--worker_id", str(i)],
+                    "--worker_id", str(i),
+                    "--num_md_workers", str(md_counts)],
                     env_vars={"PYTHONPATH": python_path})
             ml_run_settings.set_tasks_per_node(1)
             ml_run_settings.set_tasks(1)
@@ -199,7 +201,9 @@ class TrainingPipeline:
                                                 '--md', f'{self.md_stage.path}', 
                                                 '--cvae', f'{self.ml_stage.path}', 
                                                 '--pdb', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb', 
-                                                '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb'],
+                                                '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb',
+                                                '--num_md_workers', str(md_counts),
+                                                '--num_ml_workers', str(ml_counts)],
                                                 env_vars={"PYTHONPATH": python_path})
         interfacing_run_settings.set_nodes(1)
         interfacing_run_settings.set_tasks_per_node(1)
@@ -252,7 +256,7 @@ class TrainingPipeline:
                 self.interfacing_stage = self.generate_interfacing_stage() 
             self.exp.start(self.interfacing_stage)
 
-        input("Press Enter to terminate and kill the orchestrator (if it is still running)...")
+       # input("Press Enter to terminate and kill the orchestrator (if it is still running)...")
         # self.exp.stop(self.orchestrator)
 
     def __del__(self):
