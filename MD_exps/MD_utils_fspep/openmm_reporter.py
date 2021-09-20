@@ -80,8 +80,6 @@ class SmartSimContactMapReporter(object):
         print(f"Destroying reporter, final size of contact map: {out.shape}")
     
         self._dataset.add_meta_string("timestamps", self._timestamp)
-        print(self._dataset.get_meta_strings("timestamps"))
-        print(self._dataset.get_meta_scalars("cm_lengths"))
         if not self._append:
             self._client.put_dataset(self._dataset)
         else:
@@ -90,8 +88,6 @@ class SmartSimContactMapReporter(object):
                                 "cm_to_cvae",
                                 f"batch_{self._worker_id}",
                                 f"preproc_{self._worker_id}")
-        stored = self._client.get_dataset(self.dataset_name)
-        print(stored.get_meta_scalars("cm_lengths"))
 
     def describeNextReport(self, simulation):
         steps = self._reportInterval - simulation.currentStep%self._reportInterval

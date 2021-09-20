@@ -1,5 +1,5 @@
-import simtk.openmm.app as app
-import simtk.openmm as omm
+import openmm.app as app
+import openmm as omm
 import simtk.unit as u
 
 import parmed as pmd

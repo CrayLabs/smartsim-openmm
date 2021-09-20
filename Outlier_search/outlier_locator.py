@@ -15,7 +15,6 @@ DEBUG = 1
 # Inputs 
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--md", help="Input: MD simulation directory")
-# parser.add_argument("-o", help="output: cvae weight file. (Keras cannot load model directly, will check again...)")
 parser.add_argument("-c", "--cvae", help="Input: CVAE model directory")
 parser.add_argument("-p", "--pdb", help="Input: pdb file") 
 parser.add_argument("-r", "--ref", default=None, help="Input: Reference pdb for RMSD") 
@@ -29,31 +28,8 @@ pdb_file = os.path.abspath(args.pdb)
 ref_pdb_file = os.path.abspath(args.ref) 
 
 # Find the trajectories and contact maps 
-# cm_files_list = sorted(glob(os.path.join(args.md, 'omm_runs_*/*_cm.h5')))
 traj_file_list = sorted(glob(os.path.join(args.md, 'omm_runs_*/*.dcd'))) 
 checkpnt_list = sorted(glob(os.path.join(args.md, 'omm_runs_*/checkpnt.chk'))) 
-
-# if cm_files_list == []: 
-#     raise IOError("No h5/traj file found, recheck your input filepath") 
-
-# # Find all the trained model weights 
-# model_weights = sorted(glob(os.path.join(args.cvae, 'cvae_runs_*/cvae_weight.h5'))) 
-
-# # identify the latest models with lowest loss 
-# model_best = model_weights[0] 
-# loss_model_best = np.load(os.path.join(os.path.dirname(model_best), 'loss.npy'))[-1] 
-# for i in range(len(model_weights)):  
-#     if i + 1 < len(model_weights): 
-#         if True:  # int(os.path.basename(os.path.dirname(model_weights[i]))[10:12]) != int(os.path.basename(os.path.dirname(model_weights[i+1]))[10:12]):
-#             loss = np.load(os.path.join(os.path.dirname(model_weights[i]), 'loss.npy'))[-1]  
-#             if loss < loss_model_best: 
-#                 model_best, loss_model_best = model_weights[i], loss 
-#     else: 
-#         loss = np.load(os.path.join(os.path.dirname(model_weights[i]), 'loss.npy'))[-1] 
-#         if loss < loss_model_best:
-#             model_best, loss_model_best = model_weights[i], loss
-
-# print ("Using model {} with loss {}".format(model_best, loss_model_best))
 
 client = Client(None, bool(int(os.getenv("SS_CLUSTER", False))))
 best_worker_id = None
@@ -76,13 +52,6 @@ if best_worker_id is None:
 else:
     print(f"Using model {best_prefix} with loss {best_loss}, hyper_dim: {best_dim}")
     
-# Convert everything to cvae input 
-# cm_data_lists = [read_h5py_file(cm_file) for cm_file in cm_files_list] 
-# cvae_input = cm_to_cvae(cm_data_lists)
-
-# A record of every trajectory length
-# train_data_length = [cm_data.shape[1] for cm_data in cm_data_lists]
-
 
 # Outlier search 
 outlier_list = [] 
@@ -95,13 +64,6 @@ if os.path.exists(eps_record_filepath):
     eps_file.close() 
 else: 
     eps_record = {} 
-
-# for model_weight in model_weights: 
-# Identify the latent dimensions 
-# model_dim = int(os.path.basename(os.path.dirname(model_best))[10:12]) 
-# print ('Model latent dimension: %d' % model_dim )
-# Get the predicted embeddings 
-# cm_predict = predict_from_cvae(model_best, cvae_input, hyper_dim=model_dim) 
 
 for id in range(args.num_md_workers):
     latent_name = f"latent_{id}"

@@ -1,5 +1,3 @@
-
-
 '''
 Convolutional variational autoencoder in Keras
 
@@ -9,8 +7,8 @@ import numpy
 from tensorflow.keras.layers import Input, Dense, Flatten, Reshape, Dropout
 from tensorflow.keras.layers import Convolution2D, Conv2DTranspose, Layer
 from tensorflow.keras.models import Model
-from tensorflow.keras.optimizers import SGD, Adam, RMSprop, Adadelta
-from tensorflow.keras.callbacks import Callback, ModelCheckpoint
+from tensorflow.keras.optimizers import RMSprop
+from tensorflow.keras.callbacks import Callback
 from tensorflow.keras import backend as K
 from tensorflow.keras import metrics
 from tensorflow.keras.losses import binary_crossentropy
@@ -21,9 +19,6 @@ import tensorflow as tf
 gpu_devices = tf.config.experimental.list_physical_devices('GPU')
 for device in gpu_devices:
     tf.config.experimental.set_memory_growth(device, True)
-
-# from tensorflow.python.framework.ops import disable_eager_execution
-# disable_eager_execution()
 
 # save history from log        
 class LossHistory(Callback):
@@ -346,18 +341,6 @@ class conv_variational_autoencoder(Model):
 	def call(self, inputs):
 		_, _, z = self.encoder(inputs)
 		reconstruction = self.decoder(z)
-		# reconstruction_loss = tf.reduce_mean(
-		# 	tf.reduce_sum(
-		# 		binary_crossentropy(inputs, reconstruction), axis=(1, 2)
-		# 	)
-		# )
-		# kl_loss = 1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var)
-		# kl_loss = tf.reduce_mean(kl_loss)
-		# kl_loss *= -0.5
-		# total_loss = reconstruction_loss + kl_loss
-		# self.add_metric(kl_loss, name='kl_loss', aggregation='mean')
-		# self.add_metric(total_loss, name='total_loss', aggregation='mean')
-		# self.add_metric(reconstruction_loss, name='reconstruction_loss', aggregation='mean')
 		return reconstruction
 
 	def train(self, train_data, validation_data, batch_size, epochs):
