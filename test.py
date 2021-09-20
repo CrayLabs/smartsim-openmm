@@ -7,7 +7,7 @@ import os
 
 
 exp = Experiment(name="test-dataset", launcher="slurm")
-orchestrator = SlurmOrchestrator(db_nodes=1, time="02:00:00", interface="ipogif0")
+orchestrator = SlurmOrchestrator(db_nodes=1, time="02:00:00", interface="ib0")
 exp.generate(orchestrator)
 exp.start(orchestrator)
 

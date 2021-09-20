@@ -29,7 +29,6 @@ def cm_to_cvae(tensor):
 
     padded = torch.zeros(padded_size)
     padded[0:cm_data_full.shape[0], 0:cm_data_full.shape[1], 0:cm_data_full.shape[2]] = cm_data_full
-    #cm_data_full = nn.functional.pad(input=cm_data_full, pad=padding_buffer, mode='constant')
 
     # reshape matrix to 4d tensor
     cvae_input = padded.reshape(padded.shape + (1,))

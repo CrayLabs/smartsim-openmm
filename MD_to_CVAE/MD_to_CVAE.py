@@ -32,19 +32,19 @@ train_data_length = [cm_data.shape[1] for cm_data in cm_data_lists]
 cvae_data_length = len(cvae_input)
 
 # SMARTSIM CHECK
-client = Client(None, False)
-batches = None
-for i  in range(args.num_workers):
-    key = f"preproc_{i}"
-    if client.key_exists(key):
-        if batches is None:
-            batches = client.get_tensor(key)
-        else:
-            new_batch = client.get_tensor(key)
-            batches = np.concatenate((batches, new_batch), axis=0)
+# client = Client(None, False)
+# batches = None
+# for i  in range(args.num_workers):
+#     key = f"preproc_{i}"
+#     if client.key_exists(key):
+#         if batches is None:
+#             batches = client.get_tensor(key)
+#         else:
+#             new_batch = client.get_tensor(key)
+#             batches = np.concatenate((batches, new_batch), axis=0)
 
 
-print(np.linalg.norm(batches-cvae_input))
+# print(np.linalg.norm(batches-cvae_input))
 
 # # Write the traj info 
 omm_log = 'openmm_log.txt' 

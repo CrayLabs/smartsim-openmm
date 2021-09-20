@@ -43,9 +43,10 @@ class ContactMapReporter(object):
 class SmartSimContactMapReporter(object):
     def __init__(self, worker_id, reportInterval):
         self._reportInterval = reportInterval
-        self._client = Client(address=None, cluster=False)
+        self._client = Client(address=None, cluster=bool(int(os.getenv("SS_CLUSTER", False))))
         self._worker_id = worker_id
         dataset_name = "openmm_" + str(self._worker_id)
+        self.dataset_name = dataset_name
         if self._client.key_exists(dataset_name):
            self._dataset = self._client.get_dataset(dataset_name)
            self._append = True
@@ -61,9 +62,11 @@ class SmartSimContactMapReporter(object):
 
     def __del__(self):
         out = np.transpose(self._out).copy().astype(np.float32)
+        traj_length = int(out.shape[1])
         if not self._append:
             self._dataset.add_tensor(self._timestamp, self._out)
             self._client.put_tensor(f"batch_{self._worker_id}", out)
+            self._dataset.add_meta_scalar("cm_lengths", traj_length)
         else:
             dtype = Dtypes.tensor_from_numpy(out)
             self._dataset.add_tensor(self._timestamp, out, dtype)
@@ -72,11 +75,13 @@ class SmartSimContactMapReporter(object):
             batch = np.hstack((batch, out)).copy().astype(np.float32)
             self._client.delete_tensor(f"batch_{self._worker_id}")
             self._client.put_tensor(f"batch_{self._worker_id}", batch)
+            self._dataset.add_meta_scalar("cm_lengths", np.asarray(traj_length), Dtypes.tensor_from_numpy(np.asarray(traj_length)))
 
-            print(f"Destroying reporter, final size of contact map: {out.shape}")
+        print(f"Destroying reporter, final size of contact map: {out.shape}")
     
         self._dataset.add_meta_string("timestamps", self._timestamp)
         print(self._dataset.get_meta_strings("timestamps"))
+        print(self._dataset.get_meta_scalars("cm_lengths"))
         if not self._append:
             self._client.put_dataset(self._dataset)
         else:
@@ -85,6 +90,8 @@ class SmartSimContactMapReporter(object):
                                 "cm_to_cvae",
                                 f"batch_{self._worker_id}",
                                 f"preproc_{self._worker_id}")
+        stored = self._client.get_dataset(self.dataset_name)
+        print(stored.get_meta_scalars("cm_lengths"))
 
     def describeNextReport(self, simulation):
         steps = self._reportInterval - simulation.currentStep%self._reportInterval
