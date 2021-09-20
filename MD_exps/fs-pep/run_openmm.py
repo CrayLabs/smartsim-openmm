@@ -11,6 +11,7 @@ parser.add_argument("-c", help="check point file to restart simulation")
 parser.add_argument("-l", "--length", default=10, help="how long (ns) the system will be simulated")
 parser.add_argument("-g", "--gpu", default=0, help="id of gpu to use for the simulation")
 parser.add_argument("--worker_id", default=0, help="id of worker within pool", type=int)
+parser.add_argument("--output_path", default=".", type=str)
 args = parser.parse_args() 
 
 if args.f: 
@@ -27,8 +28,9 @@ if args.c:
     check_point = os.path.abspath(args.c) 
 else: 
     check_point = None 
-# pdb_file = os.path.abspath('./pdb/100-fs-peptide-400K.pdb')
-# ref_pdb_file = os.path.abspath('./pdb/fs-peptide.pdb')
+
+output_path = args.output_path
+os.makedirs(output_path)
 
 gpu_index = 0 
 
@@ -36,9 +38,8 @@ gpu_index = 0
 openmm_simulate_amber_fs_pep(pdb_file,
                              check_point = check_point,
                              GPU_index=gpu_index,
-                             output_traj="output.dcd",
-                             output_log="output.log",
-                             # output_cm='output_cm.h5',
+                             output_traj=os.path.join(output_path, "output.dcd"),
+                             output_log=os.path.join(output_path, "output.log"),
                              worker_id=args.worker_id,
                              report_time=50*u.picoseconds,
                              sim_time=float(args.length)*u.nanoseconds)

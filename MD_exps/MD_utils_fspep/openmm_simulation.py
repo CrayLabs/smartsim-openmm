@@ -1,10 +1,10 @@
 import openmm.app as app
 import openmm as omm
-import simtk.unit as u
+import openmm.unit as u
 
 import parmed as pmd
 import random
-import time
+import os
 from .openmm_reporter import ContactMapReporter, SmartSimContactMapReporter
 
 
@@ -79,7 +79,9 @@ def openmm_simulate_charmm_nvt(top_file, pdb_file, worker_id, check_point=None, 
     simulation.reporters.append(app.StateDataReporter(output_log,
             report_freq, step=True, time=True, speed=True,
             potentialEnergy=True, temperature=True, totalEnergy=True))
-    simulation.reporters.append(app.CheckpointReporter('checkpnt.chk', report_freq))
+    path_to_out = os.path.dirname(output_traj)
+    chk_file = os.path.join(path_to_out, 'checkpnt.chk')
+    simulation.reporters.append(app.CheckpointReporter(chk_file, report_freq))
     
     if check_point: 
         simulation.loadCheckpoint(check_point)
@@ -236,7 +238,10 @@ def openmm_simulate_amber_fs_pep(pdb_file, worker_id, top_file=None, check_point
     simulation.reporters.append(app.StateDataReporter(output_log,
             report_freq, step=True, time=True, speed=True,
             potentialEnergy=True, temperature=True, totalEnergy=True))
-    simulation.reporters.append(app.CheckpointReporter('checkpnt.chk', report_freq))
+    path_to_out = os.path.dirname(output_traj)
+
+    chk_file = os.path.join(path_to_out, 'checkpnt.chk')
+    simulation.reporters.append(app.CheckpointReporter(chk_file, report_freq))
 
     if check_point:
         simulation.loadCheckpoint(check_point)
@@ -318,7 +323,10 @@ def openmm_simulate_charmm_npt_z(top_file, pdb_file, worker_id, check_point=None
     simulation.reporters.append(app.StateDataReporter(output_log,
             report_freq, step=True, time=True, speed=True,
             potentialEnergy=True, temperature=True, totalEnergy=True))
-    simulation.reporters.append(app.CheckpointReporter('checkpnt.chk', report_freq))
+    path_to_out = os.path.dirname(output_traj)
+
+    chk_file = os.path.join(path_to_out, 'checkpnt.chk')
+    simulation.reporters.append(app.CheckpointReporter(chk_file, report_freq))
 
     if check_point:
         simulation.loadCheckpoint(check_point)
@@ -394,7 +402,10 @@ def openmm_simulate_amber_npt(top_file, pdb_file, check_point, worker_id, GPU_in
     simulation.reporters.append(app.StateDataReporter(output_log,
             report_freq, step=True, time=True, speed=True,
             potentialEnergy=True, temperature=True, totalEnergy=True))
-    simulation.reporters.append(app.CheckpointReporter('checkpnt.chk', report_freq))
+    path_to_out = os.path.dirname(output_traj)
+
+    chk_file = os.path.join(path_to_out, 'checkpnt.chk')
+    simulation.reporters.append(app.CheckpointReporter(chk_file, report_freq))
 
     if check_point:
         simulation.loadCheckpoint(check_point)

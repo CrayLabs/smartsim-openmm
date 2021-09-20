@@ -1,5 +1,5 @@
 import time
-import simtk.unit as u 
+import openmm.unit as u 
 from smartredis import Client, Dataset
 from smartredis.util import Dtypes
 

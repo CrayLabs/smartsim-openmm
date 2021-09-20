@@ -5,15 +5,15 @@ import MDAnalysis as mda
 from tensorflow.keras import backend as K 
 from sklearn.cluster import DBSCAN 
 
-def triu_to_full(cm0):
-    num_res = int(np.ceil((len(cm0) * 2) ** 0.5))
-    iu1 = np.triu_indices(num_res, 1)
+# def triu_to_full(cm0):
+#     num_res = int(np.ceil((len(cm0) * 2) ** 0.5))
+#     iu1 = np.triu_indices(num_res, 1)
 
-    cm_full = np.zeros((num_res, num_res))
-    cm_full[iu1] = cm0
-    cm_full.T[iu1] = cm0
-    np.fill_diagonal(cm_full, 1)
-    return cm_full
+#     cm_full = np.zeros((num_res, num_res))
+#     cm_full[iu1] = cm0
+#     cm_full.T[iu1] = cm0
+#     np.fill_diagonal(cm_full, 1)
+#     return cm_full
     
 
 def find_frame(traj_dict, frame_number=0): 
@@ -25,7 +25,9 @@ def find_frame(traj_dict, frame_number=0):
             return traj_file, local_frame
         else: 
             local_frame -= int(traj_dict[key])
-    raise Exception('frame %d should not exceed the total number of frames, %d' % (frame_number, sum(np.array(traj_dict.values()).astype(int))))
+    
+    total_length = np.sum(np.asarray(traj_dict.values()).astype(int))
+    raise Exception('frame %d should not exceed the total number of frames, %d' % (frame_number, total_length))
     
     
 def write_pdb_frame(traj_file, pdb_file, frame_number, output_pdb): 

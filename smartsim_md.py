@@ -98,6 +98,7 @@ class TrainingPipeline:
         python_path = os.getenv("PYTHONPATH", "")
         python_path = f"{base_path}/MD_exps:{base_path}/MD_exps/MD_utils_fspep:" + python_path
         md_ensemble = self.exp.create_ensemble("SmartSim-fs-pep", batch_settings=md_batch_settings)
+        self.exp.generate(md_ensemble)
         for i in range(num_MD):
             md_run_settings = SrunSettings(exe=f"python",
                                             exe_args=f"{base_path}/MD_exps/fs-pep/run_openmm.py",
@@ -105,7 +106,8 @@ class TrainingPipeline:
             md_run_settings.set_nodes(1)
             md_run_settings.set_tasks(1)
             md_run_settings.set_tasks_per_node(1)
-            md_run_settings.add_exe_args(["--worker_id", str(i)])
+            os.makedirs(os.path.join(self.exp.exp_path,"omm_out"), exist_ok=True)
+            md_run_settings.add_exe_args(["--worker_id", str(i), "--output_path", os.path.join(self.exp.exp_path,"omm_out",f"omm_runs_{i:02d}_{time_stamp+i}")])
 
             # pick initial point of simulation 
             if initial_MD or i >= len(outlier_list): 
@@ -124,13 +126,13 @@ class TrainingPipeline:
                 md_run_settings.add_exe_args(['--length', str(LEN_iter)])
                               
             # Add the MD task to the simulating stage
-            md_model = self.exp.create_model(f"omm_runs_{i:02d}_{time_stamp+i}", run_settings=md_run_settings)
+            md_model = self.exp.create_model(f"openmm_{i}", run_settings=md_run_settings)
             if not (initial_MD or i >= len(outlier_list)) and (outlier_list[i].endswith('pdb') or outlier_list[i].endswith('chk')):
                 md_model.attach_generator_files(to_copy=[outlier_list[i]])
             
             md_ensemble.add_model(md_model)
         
-        self.exp.generate(md_ensemble)
+        self.exp.generate(md_ensemble, overwrite=True)
         return md_ensemble
 
 
@@ -162,7 +164,7 @@ class TrainingPipeline:
 
             ml_ensemble.add_model(ml_model)
 
-        self.exp.generate(ml_ensemble)
+        self.exp.generate(ml_ensemble, overwrite=True)
         return ml_ensemble 
 
 
@@ -172,8 +174,8 @@ class TrainingPipeline:
         python_path = f"{base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:" + python_path
         interfacing_run_settings = SrunSettings('python', 
                                                 exe_args=['outlier_locator.py',
-                                                '--md', f'{self.md_stage.path}', 
-                                                '--cvae', f'{self.ml_stage.path}', 
+                                                '--md', os.path.join(self.exp.exp_path, 'omm_out'), 
+                                                '--cvae', self.ml_stage.path, 
                                                 '--pdb', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb', 
                                                 '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb',
                                                 '--num_md_workers', str(md_counts),
@@ -182,7 +184,8 @@ class TrainingPipeline:
         interfacing_run_settings.set_nodes(1)
         interfacing_run_settings.set_tasks_per_node(1)
         interfacing_run_settings.set_tasks(1)
-        interfacing_batch_settings = SbatchSettings(time="00:10:00", batch_args = {"nodes": node_counts, "ntasks-per-node": 1, "constraint": "V100"})
+        interfacing_batch_settings = SbatchSettings(time="00:10:00",
+                                                    batch_args = {"nodes": node_counts, "ntasks-per-node": 1, "constraint": "V100"})
         interfacing_batch_settings.add_preamble([f'. {conda_sh}',
                                                  'module load cudatoolkit',
                                                  f'conda activate {conda_path}',
@@ -212,9 +215,9 @@ class TrainingPipeline:
             self.md_stage = self.generate_MD_stage(num_MD=md_counts)
             self.exp.start(self.md_stage)
 
+            # --------------------------
+            # Learning stage, re-initialized at every retrain iteration
             if CUR_STAGE % RETRAIN_FREQ == 0: 
-                # --------------------------
-                # Learning stage, re-initialized at every retrain iteration
                 self.ml_stage = self.generate_ML_stage(num_ML=ml_counts)
                 self.exp.start(self.ml_stage)
 

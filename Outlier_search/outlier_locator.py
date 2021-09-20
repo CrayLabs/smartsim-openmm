@@ -8,7 +8,7 @@ from utils import outliers_from_latent
 from utils import find_frame, write_pdb_frame, make_dir_p 
 from  MDAnalysis.analysis.rms import RMSD
 
-from smartredis import Client, Dataset
+from smartredis import Client
 
 DEBUG = 1 
 
@@ -79,17 +79,17 @@ for id in range(args.num_md_workers):
     else:
         cm_lengths = np.concatenate((cm_lengths, loc_lengths), axis=0)
 
+train_data_length = cm_lengths
+traj_dict = dict(zip(traj_file_list, train_data_length)) 
 
 cm_predict_smartsim = client.get_tensor("latent_0")
 for id in range(1, args.num_md_workers):
     cm_predict_smartsim = np.vstack([cm_predict_smartsim, client.get_tensor(f"latent_{id}")])
 
 cm_predict = cm_predict_smartsim
-train_data_length = cm_lengths
 
 model_dim = best_dim
 
-traj_dict = dict(zip(traj_file_list, train_data_length)) 
 
 
 # initialize eps if empty 
