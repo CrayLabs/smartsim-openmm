@@ -27,8 +27,8 @@ conda_sh = '/lus/scratch/arigazzi/anaconda3/etc/profile.d/conda.sh'
 INTERFACE="ib0"
 
 if TINY:
-    LEN_initial = 2
-    LEN_iter = 2
+    LEN_initial = 5
+    LEN_iter = 5
     md_counts = gpus_per_node*2
     ml_counts = 2
     RETRAIN_FREQ = 2
@@ -134,32 +134,6 @@ class TrainingPipeline:
         return md_ensemble
 
 
-    def generate_aggregating_stage(self): 
-        """ 
-        Function to concatenate the MD trajectory (h5 contact map) 
-        """ 
-        aggr_run_settings = SrunSettings('python',
-                                         [f'{base_path}/MD_to_CVAE/MD_to_CVAE.py', 
-                                          '--sim_path', f'{self.md_stage.path}',
-                                          '--num_workers', str(md_counts)],
-                                          env_vars={"SS_CLUSTER": str(int(self.cluster_db))})
-        aggr_run_settings.set_tasks(1)
-        aggr_run_settings.set_nodes(1)
-        aggr_run_settings.set_tasks_per_node(1)
-
-        aggr_batch_settings = SbatchSettings(time="00:10:00", batch_args = {"nodes": 1, "ntasks-per-node": 1})
-
-        aggr_batch_settings.add_preamble([f'. {conda_sh}', f'conda activate {conda_path}'])
-
-        # Add the aggregation task to the aggreagating stage
-        aggregating_model = self.exp.create_model('SmartSim-MD_to_CVAE', run_settings=aggr_run_settings)
-        aggregating_ensemble = self.exp.create_ensemble("SmartSim-MD_to_CVAE", batch_settings=aggr_batch_settings)
-        aggregating_ensemble.add_model(aggregating_model)
-
-        self.exp.generate(aggregating_ensemble, overwrite=True)
-        return aggregating_ensemble
-
-
     def generate_ML_stage(self, num_ML=1): 
         """
         Function to generate the learning stage
@@ -177,7 +151,6 @@ class TrainingPipeline:
             dim = i + 3 
             cvae_dir = 'cvae_runs_%.2d_%d' % (dim, time_stamp+i) 
             ml_run_settings = SrunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
-                   # '--h5_file', f'{self.aggregating_stage.entities[0].path}/cvae_input.h5', 
                     '--dim', str(dim),
                     "--worker_id", str(i),
                     "--num_md_workers", str(md_counts)],
@@ -240,13 +213,6 @@ class TrainingPipeline:
             self.exp.start(self.md_stage)
 
             if CUR_STAGE % RETRAIN_FREQ == 0: 
-                # We don't need to aggregate with SmartSim
-                # --------------------------
-                # Aggregate stage, initialize once
-                # if CUR_STAGE == 0:
-                #     self.aggregating_stage = self.generate_aggregating_stage()            
-                # self.exp.start(self.aggregating_stage)
-
                 # --------------------------
                 # Learning stage, re-initialized at every retrain iteration
                 self.ml_stage = self.generate_ML_stage(num_ML=ml_counts)
