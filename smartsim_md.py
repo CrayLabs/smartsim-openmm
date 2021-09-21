@@ -3,6 +3,8 @@ from smartsim import Experiment
 from smartsim.settings import SrunSettings, SbatchSettings
 from smartsim.database import SlurmOrchestrator
 
+from smartredis import Client, Dataset
+
 # Assumptions:
 # - # of MD steps: 2
 # - Each MD step runtime: 15 minutes
@@ -18,7 +20,7 @@ from smartsim.database import SlurmOrchestrator
 #
 
 gpus_per_node = 1  # 6 on Summit, 1 on Horizon
-TINY = False
+TINY = True
 
 HOME = os.environ.get('HOME')
 conda_path = os.environ.get('CONDA_PREFIX')
@@ -53,7 +55,6 @@ class TrainingPipeline:
         self.exp.generate(overwrite=True)
         self.cluster_db = True
         
-    
     def start_orchestrator(self, attach=False):
         checkpoint = os.path.join(self.exp.exp_path, "database", "smartsim_db.dat")
         if attach and os.path.exists(checkpoint):
@@ -63,6 +64,7 @@ class TrainingPipeline:
             self.orchestrator = SlurmOrchestrator(db_nodes=3 if self.cluster_db else 1, time="02:00:00", interface=INTERFACE)
             self.exp.generate(self.orchestrator)
             self.exp.start(self.orchestrator)
+            self.client = Client(address=self.orchestrator.get_address()[0], cluster=self.cluster_db)
         return
 
 
@@ -72,20 +74,35 @@ class TrainingPipeline:
         """
         
         initial_MD = True
-        outlier_filepath = f'{self.exp.exp_path}/SmartSim-Outlier_search/SmartSim-Outlier_search/restart_points.json'
+        # outlier_filepath = f'{self.exp.exp_path}/SmartSim-Outlier_search/SmartSim-Outlier_search/restart_points.json'
 
-        if os.path.exists(outlier_filepath):
-            outlier_file = open(outlier_filepath, 'r') 
-            outlier_list = json.load(outlier_file) 
-            outlier_file.close()
-            num_outliers = len(outlier_list)
-            print(f"Found {num_outliers} outliers")
-            initial_MD = num_outliers > 0
-            if num_outliers == 0:
-                print("No outlier in file")
+        # if os.path.exists(outlier_filepath):
+        #     outlier_file = open(outlier_filepath, 'r') 
+        #     outlier_list = json.load(outlier_file) 
+        #     outlier_file.close()
+        #     num_outliers = len(outlier_list)
+        #     print(f"Found {num_outliers} outliers")
+        #     initial_MD = num_outliers > 0
+        #     if num_outliers == 0:
+        #         print("No outlier in file")
+        # else:
+        #     print("No outlier file found")
+
+        if self.client.key_exists('outliers'):
+            outliers = self.client.get_dataset('outliers')
+            try:
+                outlier_list = outliers.get_meta_strings('points')
+                num_outliers = len(outlier_list)
+                print(f"Found {num_outliers} outliers")
+            except:
+                outlier_list = []
+                num_outliers = 0
+                print("No outlier in dataset")
         else:
-            print("No outlier file found")
-
+            num_outliers = 0
+            print("No outlier dataset found")
+        
+        initial_MD = num_outliers == 0
         # MD tasks
         time_stamp = int(time.time())
 
@@ -127,7 +144,7 @@ class TrainingPipeline:
                               
             # Add the MD task to the simulating stage
             md_model = self.exp.create_model(f"openmm_{i}", run_settings=md_run_settings)
-            if not (initial_MD or i >= len(outlier_list)) and (outlier_list[i].endswith('pdb') or outlier_list[i].endswith('chk')):
+            if (not (initial_MD or i >= len(outlier_list))) and (outlier_list[i].endswith('pdb') or outlier_list[i].endswith('chk')):
                 md_model.attach_generator_files(to_copy=[outlier_list[i]])
             
             md_model.enable_key_prefixing()
@@ -135,7 +152,6 @@ class TrainingPipeline:
         
         # [md_ensemble.register_incoming_entity(entity) for entity in md_ensemble.entities]
         self.exp.generate(md_ensemble, overwrite=True)
-        time.sleep(10)
         return md_ensemble
 
 
@@ -159,7 +175,7 @@ class TrainingPipeline:
             ml_run_settings.set_tasks_per_node(1)
             ml_run_settings.set_tasks(1)
             ml_run_settings.set_nodes(1)
-            ml_model = self.exp.create_model(name=f"cvae_{i}", path=f'{base_path}/CVAE_exps', run_settings=ml_run_settings)
+            ml_model = self.exp.create_model(name=f"cvae_{i}", run_settings=ml_run_settings)
 
             ml_model.enable_key_prefixing()
             for entity in self.md_stage:
@@ -168,7 +184,6 @@ class TrainingPipeline:
             ml_ensemble.add_model(ml_model)
 
         self.exp.generate(ml_ensemble, overwrite=True)
-        time.sleep(5) # apparently lustre sometimes needs a rest
         return ml_ensemble 
 
 
@@ -232,7 +247,6 @@ class TrainingPipeline:
             self.exp.start(self.interfacing_stage)
 
         input("Press Enter to terminate and kill the orchestrator (if it is still running)...")
-        # self.exp.stop(self.orchestrator)
 
     def __del__(self):
         self.exp.stop(self.orchestrator)

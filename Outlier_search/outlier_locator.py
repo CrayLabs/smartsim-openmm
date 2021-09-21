@@ -7,10 +7,10 @@ from utils import outliers_from_latent
 from utils import find_frame, write_pdb_frame, make_dir_p 
 from  MDAnalysis.analysis.rms import RMSD
 
-from smartredis import Client
+from smartredis import Client, Dataset
 import smartredis
 
-DEBUG = 0
+DEBUG = 1
 
 # Inputs 
 parser = argparse.ArgumentParser()
@@ -207,9 +207,18 @@ else:
 restart_points = restart_checkpnts + restart_pdbs
 print (restart_points)
 
-restart_points_filepath = os.path.abspath('./restart_points.json') 
-with open(restart_points_filepath, 'w') as restart_file:
-    if len(restart_points) > 0:
-        json.dump(restart_points, restart_file)
-    else:
-        restart_file.write("[]")
+# restart_points_filepath = os.path.abspath('./restart_points.json') 
+# with open(restart_points_filepath, 'w') as restart_file:
+#     if len(restart_points) > 0:
+#         json.dump(restart_points, restart_file)
+#     else:
+#         restart_file.write("[]")
+
+if client.key_exists('outliers'):
+    client.delete_dataset('outliers')
+
+outlier_dataset = Dataset('outliers')
+for point in restart_points:
+    outlier_dataset.add_meta_string('points', point)
+
+client.put_dataset(outlier_dataset)
