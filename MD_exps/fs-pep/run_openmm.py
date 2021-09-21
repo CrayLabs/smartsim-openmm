@@ -10,7 +10,6 @@ parser.add_argument("-p", "--topol", dest='p', help="topology file")
 parser.add_argument("-c", help="check point file to restart simulation")
 parser.add_argument("-l", "--length", default=10, help="how long (ns) the system will be simulated")
 parser.add_argument("-g", "--gpu", default=0, help="id of gpu to use for the simulation")
-parser.add_argument("--worker_id", default=0, help="id of worker within pool", type=int)
 parser.add_argument("--output_path", default=".", type=str)
 args = parser.parse_args() 
 
@@ -40,7 +39,6 @@ openmm_simulate_amber_fs_pep(pdb_file,
                              GPU_index=gpu_index,
                              output_traj=os.path.join(output_path, "output.dcd"),
                              output_log=os.path.join(output_path, "output.log"),
-                             worker_id=args.worker_id,
                              report_time=50*u.picoseconds,
                              sim_time=float(args.length)*u.nanoseconds)
 

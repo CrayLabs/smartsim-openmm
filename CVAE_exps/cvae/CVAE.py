@@ -1,4 +1,4 @@
-import os, h5py
+import os
 import numpy as np
 
 from vae_conv_new import conv_variational_autoencoder
@@ -26,12 +26,15 @@ def CVAE(input_shape, latent_dim=3):
 
     return autoencoder
 
-def run_cvae(gpu_id, hyper_dim=3, epochs=100, num_md_workers=2): 
+def run_cvae(gpu_id, hyper_dim=3, epochs=10): 
 
     client = Client(None, bool(int(os.getenv("SS_CLUSTER", False))))
+    client.use_tensor_ensemble_prefix(False)
+    print(os.environ)
+    print(os.getenv("SSKEYIN"))
     batches = None
-    for i  in range(num_md_workers):
-        key = f"preproc_{i}"
+    for prefix in os.getenv("SSKEYIN").split(":"):
+        key = "{" + prefix + "}.preproc"
         if client.key_exists(key):
             if batches is None:
                 batches = client.get_tensor(key)

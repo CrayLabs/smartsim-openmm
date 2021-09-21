@@ -18,7 +18,7 @@ from smartsim.database import SlurmOrchestrator
 #
 
 gpus_per_node = 1  # 6 on Summit, 1 on Horizon
-TINY = True
+TINY = False
 
 HOME = os.environ.get('HOME')
 conda_path = os.environ.get('CONDA_PREFIX')
@@ -32,7 +32,7 @@ if TINY:
     md_counts = gpus_per_node*2
     ml_counts = 2
     RETRAIN_FREQ = 2
-    MAX_STAGE = 5
+    MAX_STAGE = 4
 else:
     LEN_initial = 10
     LEN_iter = 10 
@@ -51,7 +51,7 @@ class TrainingPipeline:
     def __init__(self):
         self.exp = Experiment(name="SmartSim-DDMD", launcher="slurm")
         self.exp.generate(overwrite=True)
-        self.cluster_db = False
+        self.cluster_db = True
         
     
     def start_orchestrator(self, attach=False):
@@ -107,7 +107,7 @@ class TrainingPipeline:
             md_run_settings.set_tasks(1)
             md_run_settings.set_tasks_per_node(1)
             os.makedirs(os.path.join(self.exp.exp_path,"omm_out"), exist_ok=True)
-            md_run_settings.add_exe_args(["--worker_id", str(i), "--output_path", os.path.join(self.exp.exp_path,"omm_out",f"omm_runs_{i:02d}_{time_stamp+i}")])
+            md_run_settings.add_exe_args(["--output_path", os.path.join(self.exp.exp_path,"omm_out",f"omm_runs_{i:02d}_{time_stamp+i}")])
 
             # pick initial point of simulation 
             if initial_MD or i >= len(outlier_list): 
@@ -130,8 +130,10 @@ class TrainingPipeline:
             if not (initial_MD or i >= len(outlier_list)) and (outlier_list[i].endswith('pdb') or outlier_list[i].endswith('chk')):
                 md_model.attach_generator_files(to_copy=[outlier_list[i]])
             
+            md_model.enable_key_prefixing()
             md_ensemble.add_model(md_model)
         
+        # [md_ensemble.register_incoming_entity(entity) for entity in md_ensemble.entities]
         self.exp.generate(md_ensemble, overwrite=True)
         return md_ensemble
 
@@ -141,7 +143,6 @@ class TrainingPipeline:
         Function to generate the learning stage
         """
 
-        time_stamp = int(time.time())
         ml_batch_settings = SbatchSettings(time="02:00:00", batch_args={"nodes": num_ML, "ntasks-per-node": 1, "constraint": "V100"})
         ml_batch_settings.set_partition("spider")
         ml_batch_settings.add_preamble([f'. {conda_sh}', 'module load cudatoolkit', f'conda activate {conda_path}' ])
@@ -151,20 +152,22 @@ class TrainingPipeline:
         # learn task
         for i in range(num_ML): 
             dim = i + 3 
-            cvae_dir = 'cvae_runs_%.2d_%d' % (dim, time_stamp+i) 
             ml_run_settings = SrunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
-                    '--dim', str(dim),
-                    "--worker_id", str(i),
-                    "--num_md_workers", str(md_counts)],
+                    '--dim', str(dim)],
                     env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))})
             ml_run_settings.set_tasks_per_node(1)
             ml_run_settings.set_tasks(1)
             ml_run_settings.set_nodes(1)
-            ml_model = self.exp.create_model(name=cvae_dir, path=f'{base_path}/CVAE_exps', run_settings=ml_run_settings)
+            ml_model = self.exp.create_model(name=f"cvae_{i}", path=f'{base_path}/CVAE_exps', run_settings=ml_run_settings)
 
+            ml_model.enable_key_prefixing()
+            for entity in self.md_stage:
+                ml_model.register_incoming_entity(entity)
+            
             ml_ensemble.add_model(ml_model)
 
         self.exp.generate(ml_ensemble, overwrite=True)
+        time.sleep(5) # apparently lustre sometimes needs a rest
         return ml_ensemble 
 
 
@@ -175,11 +178,8 @@ class TrainingPipeline:
         interfacing_run_settings = SrunSettings('python', 
                                                 exe_args=['outlier_locator.py',
                                                 '--md', os.path.join(self.exp.exp_path, 'omm_out'), 
-                                                '--cvae', self.ml_stage.path, 
                                                 '--pdb', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb', 
-                                                '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb',
-                                                '--num_md_workers', str(md_counts),
-                                                '--num_ml_workers', str(ml_counts)],
+                                                '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb'],
                                                 env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))})
         interfacing_run_settings.set_nodes(1)
         interfacing_run_settings.set_tasks_per_node(1)
@@ -200,6 +200,9 @@ class TrainingPipeline:
         interfacing_ensemble.add_model(interfacing_model)
 
         self.exp.generate(interfacing_ensemble, overwrite=True)
+
+        [interfacing_model.register_incoming_entity(entity) for entity in self.ml_stage.entities]
+        [interfacing_model.register_incoming_entity(entity) for entity in self.md_stage.entities]
         return interfacing_ensemble
 
 

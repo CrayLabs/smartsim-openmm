@@ -41,12 +41,12 @@ class ContactMapReporter(object):
         self._file.flush()
 
 class SmartSimContactMapReporter(object):
-    def __init__(self, worker_id, reportInterval):
+    def __init__(self, reportInterval):
         self._reportInterval = reportInterval
         self._client = Client(address=None, cluster=bool(int(os.getenv("SS_CLUSTER", False))))
-        self._worker_id = worker_id
-        dataset_name = "openmm_" + str(self._worker_id)
-        self.dataset_name = dataset_name
+        dataset_name = os.getenv("SSKEYOUT")
+        self._client.use_tensor_ensemble_prefix(False)
+        self._dataset_prefix = "{"+dataset_name+"}."
         if self._client.key_exists(dataset_name):
            self._dataset = self._client.get_dataset(dataset_name)
            self._append = True
@@ -64,17 +64,14 @@ class SmartSimContactMapReporter(object):
         out = np.transpose(self._out).copy().astype(np.float32)
         traj_length = int(out.shape[1])
         if not self._append:
-            self._dataset.add_tensor(self._timestamp, self._out)
-            self._client.put_tensor(f"batch_{self._worker_id}", out)
+            self._dataset.add_tensor("batch", out)
             self._dataset.add_meta_scalar("cm_lengths", traj_length)
         else:
             dtype = Dtypes.tensor_from_numpy(out)
-            self._dataset.add_tensor(self._timestamp, out, dtype)
-
-            batch = self._client.get_tensor(f"batch_{self._worker_id}")
+            
+            batch = self._dataset.get_tensor("batch")
             batch = np.hstack((batch, out)).copy().astype(np.float32)
-            self._client.delete_tensor(f"batch_{self._worker_id}")
-            self._client.put_tensor(f"batch_{self._worker_id}", batch)
+            self._dataset.add_tensor("batch", batch, dtype)
             self._dataset.add_meta_scalar("cm_lengths", np.asarray(traj_length), Dtypes.tensor_from_numpy(np.asarray(traj_length)))
 
         print(f"Destroying reporter, final size of contact map: {out.shape}")
@@ -86,8 +83,8 @@ class SmartSimContactMapReporter(object):
             super(type(self._client), self._client).put_dataset(self._dataset)
         self._client.run_script("cvae_script",
                                 "cm_to_cvae",
-                                f"batch_{self._worker_id}",
-                                f"preproc_{self._worker_id}")
+                                self._dataset_prefix+"batch",
+                                self._dataset_prefix+"preproc")
 
     def describeNextReport(self, simulation):
         steps = self._reportInterval - simulation.currentStep%self._reportInterval
