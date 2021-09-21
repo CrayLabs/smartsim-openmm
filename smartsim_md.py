@@ -27,8 +27,8 @@ conda_sh = '/lus/scratch/arigazzi/anaconda3/etc/profile.d/conda.sh'
 INTERFACE="ib0"
 
 if TINY:
-    LEN_initial = 5
-    LEN_iter = 5
+    LEN_initial = 3
+    LEN_iter = 3
     md_counts = gpus_per_node*2
     ml_counts = 2
     RETRAIN_FREQ = 2

@@ -10,7 +10,7 @@ from  MDAnalysis.analysis.rms import RMSD
 from smartredis import Client
 import smartredis
 
-DEBUG = 1 
+DEBUG = 0
 
 # Inputs 
 parser = argparse.ArgumentParser()
@@ -24,10 +24,10 @@ args = parser.parse_args()
 pdb_file = os.path.abspath(args.pdb) 
 ref_pdb_file = os.path.abspath(args.ref) 
 
+# Separate incoming ml from md workers
 incoming_entities = os.getenv("SSKEYIN")
 md_workers = []
 ml_workers = []
-
 for key in incoming_entities.split(":"):
     if key.startswith("openmm"):
         md_workers.append(key)
@@ -100,8 +100,8 @@ for idx, md_worker in enumerate(md_workers):
 train_data_length = cm_lengths
 traj_dict = dict(zip(traj_file_list, train_data_length)) 
 
-cm_predict_smartsim = client.get_tensor("{"+md_workers[0]+"}.latent")
-for md_worker in md_workers[1:]:
+cm_predict_smartsim = np.empty(shape=(0, best_dim), dtype=np.float32)
+for md_worker in md_workers:
     try:
         cm_predict_smartsim = np.vstack([cm_predict_smartsim, client.get_tensor("{"+md_worker+"}.latent")])
     except smartredis.error.RedisReplyError:
@@ -188,9 +188,6 @@ for checkpnt in checkpnt_list:
 
 if DEBUG: 
     print (restart_checkpnts)
-
-
-if DEBUG: 
     print (restart_pdbs)
 
 # rank the restart_pdbs according to their RMSD to local state 
@@ -201,6 +198,7 @@ if ref_pdb_file:
     R.run()    
     # Make a dict contains outliers and their RMSD
     restart_pdbs = [pdb for _, pdb in sorted(zip(R.rmsd[:,2], restart_pdbs))] 
+    print(np.min(R.rmsd[:,2]), np.max(R.rmsd[:,2]), np.mean(R.rmsd[:,2]))
 else: 
     random.shuffle(restart_pdbs) 
 
@@ -215,4 +213,3 @@ with open(restart_points_filepath, 'w') as restart_file:
         json.dump(restart_points, restart_file)
     else:
         restart_file.write("[]")
-
