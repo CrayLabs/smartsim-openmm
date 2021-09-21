@@ -3,12 +3,12 @@ import argparse
 import numpy as np 
 from glob import glob
 import MDAnalysis as mda
-# from utils import read_h5py_file, outliers_from_cvae, cm_to_cvae,predict_from_cvae
 from utils import outliers_from_latent
 from utils import find_frame, write_pdb_frame, make_dir_p 
 from  MDAnalysis.analysis.rms import RMSD
 
 from smartredis import Client
+import smartredis
 
 DEBUG = 1 
 
@@ -66,7 +66,6 @@ if best_worker_id is None:
 else:
     print(f"Using model {best_prefix} with loss {best_loss}, hyper_dim: {best_dim}")
     
-
 # Outlier search 
 outlier_list = [] 
 
@@ -79,13 +78,18 @@ if os.path.exists(eps_record_filepath):
 else: 
     eps_record = {} 
 
+
 for idx, md_worker in enumerate(md_workers):
-    latent_name = "{"+md_worker+"}.latent"
+    md_worker_prefix = "{"+md_worker+"}."
+    latent_name = md_worker_prefix + "latent"
     if client.tensor_exists(latent_name):
         client.delete_tensor(latent_name)
         client.delete_tensor(latent_name+"_mean")
         client.delete_tensor(latent_name+"_var")
-    client.run_model(best_prefix+"_encoder", ["{"+md_worker+"}.preproc"], [latent_name+"_mean", latent_name+"_var", latent_name])
+    if not client.tensor_exists(md_worker_prefix + "preproc"):
+        continue
+    client.run_model(best_prefix+"_encoder", [md_worker_prefix + "preproc"],
+                    [latent_name+"_mean", latent_name+"_var", latent_name])
     omm_dataset = client.get_dataset(md_worker)
     loc_lengths = omm_dataset.get_meta_scalars("cm_lengths").astype(np.int64)
     if idx == 0:
@@ -98,12 +102,14 @@ traj_dict = dict(zip(traj_file_list, train_data_length))
 
 cm_predict_smartsim = client.get_tensor("{"+md_workers[0]+"}.latent")
 for md_worker in md_workers[1:]:
-    cm_predict_smartsim = np.vstack([cm_predict_smartsim, client.get_tensor("{"+md_worker+"}.latent")])
+    try:
+        cm_predict_smartsim = np.vstack([cm_predict_smartsim, client.get_tensor("{"+md_worker+"}.latent")])
+    except smartredis.error.RedisReplyError:
+        print("{"+md_worker+"}.latent is missing")
 
 cm_predict = cm_predict_smartsim
 
 model_dim = best_dim
-
 
 
 # initialize eps if empty 

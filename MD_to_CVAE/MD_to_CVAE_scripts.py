@@ -11,14 +11,12 @@ def triu_to_full(cm0):
     return cm_full
 
 
-def cm_to_cvae(tensor): 
+def cm_to_cvae(cm_all): 
     """
     A function converting the 2d upper triangle information of contact maps 
     read from hdf5 file to full contact map and reshape to the format ready 
     for cvae
     """
-    cm_all = tensor
-
     # transfer upper triangle to full matrix 
     cm_data_full = torch.stack([triu_to_full(cm_data) for cm_data in cm_all.T]) 
 
@@ -34,3 +32,11 @@ def cm_to_cvae(tensor):
     cvae_input = padded.reshape(padded.shape + (1,))
 
     return cvae_input
+
+def cm_to_existing_cvae(batch, preproc):
+
+    cvae = cm_to_cvae(batch)
+
+    concatenated = torch.cat((preproc, cvae), 0)
+
+    return concatenated

@@ -64,15 +64,23 @@ class SmartSimContactMapReporter(object):
         out = np.transpose(self._out).copy().astype(np.float32)
         traj_length = int(out.shape[1])
         if not self._append:
-            self._dataset.add_tensor("batch", out)
+            self._client.put_tensor(self._dataset_prefix+"batch", out)
             self._dataset.add_meta_scalar("cm_lengths", traj_length)
+            self._client.run_script("cvae_script",
+                                    "cm_to_cvae",
+                                    [self._dataset_prefix+"batch"],
+                                    [self._dataset_prefix+"preproc"])
         else:
             dtype = Dtypes.tensor_from_numpy(out)
-            
-            batch = self._dataset.get_tensor("batch")
-            batch = np.hstack((batch, out)).copy().astype(np.float32)
-            self._dataset.add_tensor("batch", batch, dtype)
-            self._dataset.add_meta_scalar("cm_lengths", np.asarray(traj_length), Dtypes.tensor_from_numpy(np.asarray(traj_length)))
+
+            self._client.delete_tensor(self._dataset_prefix+"batch")
+            self._client.put_tensor(self._dataset_prefix+"batch", out)
+            self._client.run_script("cvae_script",
+                                    "cm_to_existing_cvae",
+                                    [self._dataset_prefix+"batch", self._dataset_prefix+"preproc"],
+                                    [self._dataset_prefix+"preproc"])
+            self._dataset.add_meta_scalar("cm_lengths", np.asarray(traj_length),
+                                          Dtypes.tensor_from_numpy(np.asarray(traj_length)))
 
         print(f"Destroying reporter, final size of contact map: {out.shape}")
     
@@ -81,10 +89,6 @@ class SmartSimContactMapReporter(object):
             self._client.put_dataset(self._dataset)
         else:
             super(type(self._client), self._client).put_dataset(self._dataset)
-        self._client.run_script("cvae_script",
-                                "cm_to_cvae",
-                                self._dataset_prefix+"batch",
-                                self._dataset_prefix+"preproc")
 
     def describeNextReport(self, simulation):
         steps = self._reportInterval - simulation.currentStep%self._reportInterval

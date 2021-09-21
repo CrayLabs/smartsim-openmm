@@ -36,8 +36,8 @@ if TINY:
 else:
     LEN_initial = 10
     LEN_iter = 10 
-    md_counts = 12
-    ml_counts = 10
+    md_counts = 6
+    ml_counts = 6
     RETRAIN_FREQ = 5
     MAX_STAGE = 10
 
@@ -135,6 +135,7 @@ class TrainingPipeline:
         
         # [md_ensemble.register_incoming_entity(entity) for entity in md_ensemble.entities]
         self.exp.generate(md_ensemble, overwrite=True)
+        time.sleep(10)
         return md_ensemble
 
 
