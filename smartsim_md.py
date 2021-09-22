@@ -74,7 +74,7 @@ class TrainingPipeline:
 
         used_files = Dataset('used_files')
         used_files.add_meta_string('pdbs', '100-fs-peptide-400K.pdb')
-        used_files.add_meta_string('checkpoints', '_.chk')
+        used_files.add_meta_string('checkpoints', '_.chk')  # Fake, just to initialize field
         self.client.put_dataset(used_files)
         return
 
@@ -235,7 +235,7 @@ class TrainingPipeline:
         interfacing_run_settings.set_tasks_per_node(1)
         interfacing_run_settings.set_tasks(1)
         interfacing_batch_settings = SbatchSettings(time="02:00:00",
-                                                    batch_args = {"nodes": node_counts, "ntasks-per-node": 1, "constraint": "V100"})
+                                                    batch_args = {"nodes": 1, "ntasks-per-node": 1, "constraint": "V100"})
         interfacing_batch_settings.add_preamble([f'. {conda_sh}',
                                                  'module load cudatoolkit',
                                                  f'conda activate {conda_path}',
