@@ -42,28 +42,34 @@ def save_model_to_db(client, model, prefix):
 
 if __name__ == '__main__': 
 
-    cvae = run_cvae(gpu_id, hyper_dim=hyper_dim)
-    prefix = "_".join((str(int(time.time())), str(hyper_dim)))
+    print("STARTING")
+    while True:
+        print("Running CVAE")
+        cvae = run_cvae(gpu_id, hyper_dim=hyper_dim, epochs=100)
+        if cvae is None:
+            time.sleep(15)
+            continue
+        prefix = "_".join((str(int(time.time())), str(hyper_dim)))
 
-    client = Client(None, bool(int(os.getenv("SS_CLUSTER", False))))
-    client.use_tensor_ensemble_prefix(False)
-    
-    # We don't need this, we only need the encoder
-    # save_model_to_db(client, cvae, prefix)
+        client = Client(None, bool(int(os.getenv("SS_CLUSTER", False))))
+        client.use_tensor_ensemble_prefix(False)
+        
+        # We don't need this, we only need the encoder
+        # save_model_to_db(client, cvae, prefix)
 
-    client.put_tensor(prefix+"_loss", np.array(cvae.history_call.losses))
-    save_model_to_db(client, cvae.encoder, prefix)
+        client.put_tensor(prefix+"_loss", np.array(cvae.history_call.losses))
+        save_model_to_db(client, cvae.encoder, prefix)
 
-    dataset_name = os.getenv("SSKEYOUT")
-    print(f"Writing to {dataset_name}")
-    if client.key_exists(dataset_name):
-        dataset = client.get_dataset(dataset_name)
-        dtype = Dtypes.tensor_from_numpy(np.asarray(hyper_dim))
-        dataset.add_meta_string("prefixes", prefix)
-        dataset.add_meta_scalar("latent_dims", np.asarray(hyper_dim), dtype)
-        super(type(client), client).put_dataset(dataset)
-    else:
-        dataset = Dataset(dataset_name)
-        dataset.add_meta_string("prefixes", prefix)
-        dataset.add_meta_scalar("latent_dims", int(hyper_dim))
-        client.put_dataset(dataset)
+        dataset_name = os.getenv("SSKEYOUT")
+        print(f"Writing to {dataset_name}")
+        if client.key_exists(dataset_name):
+            dataset = client.get_dataset(dataset_name)
+            dtype = Dtypes.tensor_from_numpy(np.asarray(hyper_dim))
+            dataset.add_meta_string("prefixes", prefix)
+            dataset.add_meta_scalar("latent_dims", np.asarray(hyper_dim), dtype)
+            super(type(client), client).put_dataset(dataset)
+        else:
+            dataset = Dataset(dataset_name)
+            dataset.add_meta_string("prefixes", prefix)
+            dataset.add_meta_scalar("latent_dims", int(hyper_dim))
+            client.put_dataset(dataset)

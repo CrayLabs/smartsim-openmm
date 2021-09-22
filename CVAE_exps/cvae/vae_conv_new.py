@@ -346,4 +346,4 @@ class conv_variational_autoencoder(Model):
 	def train(self, train_data, validation_data, batch_size, epochs):
 		self.fit(x=train_data, validation_data=(validation_data, validation_data),
 				 epochs=epochs, batch_size=batch_size, callbacks=[self.history_call],
-				 shuffle=True)
+				 shuffle=True, verbose=2)

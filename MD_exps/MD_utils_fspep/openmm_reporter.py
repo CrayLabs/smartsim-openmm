@@ -41,8 +41,9 @@ class ContactMapReporter(object):
         self._file.flush()
 
 class SmartSimContactMapReporter(object):
-    def __init__(self, reportInterval):
+    def __init__(self, reportInterval, output_path):
         self._reportInterval = reportInterval
+        self._output_path = output_path
         self._client = Client(address=None, cluster=bool(int(os.getenv("SS_CLUSTER", False))))
         dataset_name = os.getenv("SSKEYOUT")
         self._client.use_tensor_ensemble_prefix(False)
@@ -85,6 +86,7 @@ class SmartSimContactMapReporter(object):
         print(f"Destroying reporter, final size of contact map: {out.shape}")
     
         self._dataset.add_meta_string("timestamps", self._timestamp)
+        self._dataset.add_meta_string("paths", self._output_path)
         if not self._append:
             self._client.put_dataset(self._dataset)
         else:
