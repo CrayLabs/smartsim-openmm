@@ -64,13 +64,17 @@ while not stop:
             output_path = args.output_path
             os.makedirs(output_path)
 
-            openmm_simulate_amber_fs_pep(pdb_file,
-                                        check_point = check_point,
-                                        GPU_index=gpu_index,
-                                        output_traj=os.path.join(output_path, "output.dcd"),
-                                        output_log=os.path.join(output_path, "output.log"),
-                                        report_time=50*u.picoseconds,
-                                        sim_time=float(args.length)*u.nanoseconds)
+            try:
+                openmm_simulate_amber_fs_pep(pdb_file,
+                                            check_point=check_point,
+                                            GPU_index=gpu_index,
+                                            output_traj=os.path.join(output_path, "output.dcd"),
+                                            output_log=os.path.join(output_path, "output.log"),
+                                            report_time=50*u.picoseconds,
+                                            sim_time=float(args.length)*u.nanoseconds)
+            except (OSError, IOError):
+                print("Simulation raised OS or I/O error. This could happen if a file was moved.\n"
+                      "If this happens frequently, check the pipeline.")
             client.delete_dataset(input_dataset_key)
             print(f"Completed iteration #{iteration}", flush=True)
             iteration += 1

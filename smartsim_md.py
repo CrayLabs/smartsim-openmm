@@ -1,11 +1,9 @@
-import os, json, time 
+import os, time 
 from smartsim import Experiment
 from smartsim.settings import SrunSettings, SbatchSettings
 from smartsim.database import SlurmOrchestrator
 
 from smartredis import Client, Dataset
-
-import logging
 
 # Assumptions:
 # - # of MD steps: 2
@@ -21,8 +19,6 @@ import logging
 # [2] https://docs.google.com/document/d/1XFgg4rlh7Y2nckH0fkiZTxfauadZn_zSn3sh51kNyKE/
 #
 
-logger = logging.getLogger()
-logger.setLevel("INFO")
 
 gpus_per_node = 1  # 6 on Summit, 1 on Horizon
 TINY = True
@@ -43,16 +39,16 @@ if TINY:
 else:
     LEN_initial = 10
     LEN_iter = 10
-    md_counts = 3
-    ml_counts = 3
+    md_counts = 6
+    ml_counts = 6
     RETRAIN_FREQ = 5
     MAX_STAGE = 10
 
 node_counts = md_counts // gpus_per_node
 
-logger.info("-"*49)
-logger.info(" "*21 + "WELCOME")
-logger.info("-"*49 + "\n")
+print("-"*49)
+print(" "*21 + "WELCOME")
+print("-"*49 + "\n")
 
 class TrainingPipeline:
     def __init__(self):
@@ -64,7 +60,7 @@ class TrainingPipeline:
     def start_orchestrator(self, attach=False):
         checkpoint = os.path.join(self.exp.exp_path, "database", "smartsim_db.dat")
         if attach and os.path.exists(checkpoint):
-            logger.info("Found orchestrator checkpoint, reconnecting")
+            print("Found orchestrator checkpoint, reconnecting")
             self.orchestrator = self.exp.reconnect_orchestrator(checkpoint)
         else:
             self.orchestrator = SlurmOrchestrator(db_nodes=3 if self.cluster_db else 1, time="02:30:00", interface=INTERFACE)
@@ -151,7 +147,7 @@ class TrainingPipeline:
                             "-g", str(i%gpus_per_node)])
 
             # pick initial point of simulation 
-            if initial_MD or i >= len(outlier_list): 
+            if initial_MD or outlier_idx >= len(outlier_list): 
                 exe_args.extend(['--pdb_file', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb'])
 
             elif outlier.endswith('pdb'): 
@@ -186,7 +182,7 @@ class TrainingPipeline:
                 input_dataset.add_meta_string("args", exe_arg)
             
             self.client.put_dataset(input_dataset)
-            logger.info("Updated " + input_dataset_key)
+            print("Updated " + input_dataset_key)
             
 
     def generate_ML_stage(self, num_ML=1): 
@@ -263,7 +259,7 @@ class TrainingPipeline:
         # MD stage, re-initialized at every iteration
         self.md_stage = self.generate_MD_stage(num_MD=md_counts)
         self.update_MD_exe_args()
-        logger.info("STARTING MD")
+        print("STARTING MD")
         self.exp.start(self.md_stage, block=False)
 
         # --------------------------
@@ -271,7 +267,7 @@ class TrainingPipeline:
         self.ml_stage = self.generate_ML_stage(num_ML=ml_counts)
         while not any([self.client.key_exists(md.name) for md in self.md_stage]):
             time.sleep(5)
-        logger.info("STARTING ML")
+        print("STARTING ML")
         self.exp.start(self.ml_stage, block=False)
 
         # --------------------------
@@ -279,7 +275,7 @@ class TrainingPipeline:
         self.interfacing_stage = self.generate_interfacing_stage() 
         while not any([self.client.key_exists(ml.name) for ml in self.ml_stage]):
             time.sleep(5)
-        logger.info("STARTING OUTLIER SEARCH")
+        print("STARTING OUTLIER SEARCH")
         self.exp.start(self.interfacing_stage, block=False)
 
         while True:
