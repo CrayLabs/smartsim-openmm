@@ -20,7 +20,7 @@ from smartredis import Client, Dataset
 #
 
 gpus_per_node = 1  # 6 on Summit, 1 on Horizon
-TINY = True
+TINY = False
 
 HOME = os.environ.get('HOME')
 conda_path = os.environ.get('CONDA_PREFIX')
@@ -144,8 +144,8 @@ class TrainingPipeline:
                               
             # Add the MD task to the simulating stage
             md_model = self.exp.create_model(f"openmm_{i}", run_settings=md_run_settings)
-            if (not (initial_MD or i >= len(outlier_list))) and (outlier_list[i].endswith('pdb') or outlier_list[i].endswith('chk')):
-                md_model.attach_generator_files(to_copy=[outlier_list[i]])
+            # if (not (initial_MD or i >= len(outlier_list))) and (outlier_list[i].endswith('pdb') or outlier_list[i].endswith('chk')):
+            #     md_model.attach_generator_files(to_copy=[outlier_list[i]])
             
             md_model.enable_key_prefixing()
             md_ensemble.add_model(md_model)
