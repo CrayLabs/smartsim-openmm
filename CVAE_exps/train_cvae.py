@@ -19,8 +19,16 @@ parser.add_argument("-gpu", default=0, help="gpu_id")
 
 args = parser.parse_args()
 
-hyper_dim = int(args.dim) 
+client = Client(None, bool(int(os.getenv("SS_CLUSTER", False))))
+client.use_tensor_ensemble_prefix(False)
+
+if args.dim == 'SmartSim':
+    hyper_dim = client.get_tensor(os.getenv("SSKEYOUT")+"_dim").astype(int)[0]
+else:
+    hyper_dim = int(args.dim) 
 gpu_id = args.gpu
+
+
 
 def save_model_to_db(client, model, prefix):
     full_model = tf.function(lambda x: model(x))
@@ -51,8 +59,6 @@ if __name__ == '__main__':
             continue
         prefix = "_".join((str(int(time.time())), str(hyper_dim)))
 
-        client = Client(None, bool(int(os.getenv("SS_CLUSTER", False))))
-        client.use_tensor_ensemble_prefix(False)
         
         # We don't need this, we only need the encoder
         # save_model_to_db(client, cvae, prefix)
