@@ -50,9 +50,7 @@ def save_model_to_db(client, model, prefix):
 
 if __name__ == '__main__': 
 
-    print("STARTING")
     while True:
-        print("Running CVAE")
         cvae = run_cvae(gpu_id, hyper_dim=hyper_dim, epochs=100)
         if cvae is None:
             time.sleep(15)

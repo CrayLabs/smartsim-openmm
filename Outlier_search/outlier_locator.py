@@ -192,7 +192,7 @@ while True:
             continue
         client.run_model(best_prefix+"_encoder", [md_worker_prefix + "preproc"],
                         [latent_name+"_mean", latent_name+"_var", latent_name])
-        loc_predict = client.get_tensor("{"+md_worker+"}.latent")
+        loc_predict = client.get_tensor("{"+md_worker+"}.latent_mean")
         omm_dataset = client.get_dataset(md_worker)
         loc_lengths = omm_dataset.get_meta_scalars("cm_lengths").astype(np.int64)
         loc_paths = omm_dataset.get_meta_strings("paths")
