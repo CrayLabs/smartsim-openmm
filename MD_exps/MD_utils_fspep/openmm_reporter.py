@@ -72,25 +72,19 @@ class SmartSimContactMapReporter(object):
                                     [self._dataset_prefix+"batch"],
                                     [self._dataset_prefix+"preproc"])
         else:
-            dtype = Dtypes.tensor_from_numpy(out)
-
             self._client.delete_tensor(self._dataset_prefix+"batch")
             self._client.put_tensor(self._dataset_prefix+"batch", out)
             self._client.run_script("cvae_script",
                                     "cm_to_existing_cvae",
                                     [self._dataset_prefix+"batch", self._dataset_prefix+"preproc"],
                                     [self._dataset_prefix+"preproc"])
-            self._dataset.add_meta_scalar("cm_lengths", np.asarray(traj_length),
-                                          Dtypes.tensor_from_numpy(np.asarray(traj_length)))
+            self._dataset.add_meta_scalar("cm_lengths", np.asarray(traj_length))
 
         print(f"Destroying reporter, final size of contact map: {out.shape}")
     
         self._dataset.add_meta_string("timestamps", self._timestamp)
         self._dataset.add_meta_string("paths", self._output_path)
-        if not self._append:
-            self._client.put_dataset(self._dataset)
-        else:
-            super(type(self._client), self._client).put_dataset(self._dataset)
+        self._client.put_dataset(self._dataset)
 
     def describeNextReport(self, simulation):
         steps = self._reportInterval - simulation.currentStep%self._reportInterval

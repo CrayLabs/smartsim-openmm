@@ -17,12 +17,17 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--md", help="Input: MD simulation directory")
 parser.add_argument("-p", "--pdb", help="Input: pdb file") 
 parser.add_argument("-r", "--ref", default=None, help="Input: Reference pdb for RMSD")
+parser.add_argument("--gpus_per_node", default=1, type=int)
+parser.add_argument("--len_initial", type=int, default=10)
+parser.add_argument("--len_iter", type=int, default=10)
 
 args = parser.parse_args()
+LEN_initial = args.len_initial
+LEN_iter = args.len_iter
 
 # Pdb file for MDAnalysis 
-pdb_file = os.path.abspath(args.pdb) 
-ref_pdb_file = os.path.abspath(args.ref) 
+pdb_file = os.path.abspath(args.pdb)
+ref_pdb_file = os.path.abspath(args.ref)
 
 # Separate incoming ml from md workers
 incoming_entities = os.getenv("SSKEYIN")
@@ -43,12 +48,93 @@ num_ml_workers = len(ml_workers)
 client = Client(None, bool(int(os.getenv("SS_CLUSTER", False))))
 client.use_tensor_ensemble_prefix(False)
 
+exp_path = os.path.dirname(os.getcwd())
+base_path = os.path.dirname(exp_path)
+
 md_updated = True
 
 eps_record = {} 
 
+def update_MD_exe_args(md_workers):
+        
+        initial_MD = True
+
+        if client.key_exists('outliers'):
+            outliers = client.get_dataset('outliers')
+            try:
+                outlier_list = outliers.get_meta_strings('points')
+                # Filter out used files -- we need this because we are async
+                # [outlier_list.remove(outlier) for outlier in outlier_list if outlier in used_outliers]
+                num_outliers = len(outlier_list)
+            except:
+                outlier_list = []
+                num_outliers = 0
+        else:
+            num_outliers = 0
+        
+        initial_MD = num_outliers == 0
+
+        # MD tasks
+        time_stamp = int(time.time())
+
+        outlier_idx = 0
+        for (i, omm) in enumerate(md_workers):
+            if not initial_MD:
+                outlier = outlier_list[outlier_idx]
+
+            input_dataset_key = omm + "_input"
+            if client.key_exists(input_dataset_key):
+                continue
+            
+            input_dataset = Dataset(input_dataset_key)
+
+            exe_args = []
+            exe_args.extend(["--output_path",
+                            os.path.join(exp_path,"omm_out",f"omm_runs_{i:02d}_{time_stamp+i}"),
+                            "-g", str(i%args.gpus_per_node)])
+
+            # pick initial point of simulation 
+            if initial_MD or outlier_idx >= len(outlier_list): 
+                exe_args.extend(['--pdb_file', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb'])
+
+            elif outlier.endswith('pdb'): 
+                exe_args.extend(['--pdb_file', outlier])
+
+                # used_outliers.append(outlier)
+                used_files = client.get_dataset('used_files')
+                used_files.add_meta_string('pdbs', os.path.basename(outlier))
+                client.put_dataset(used_files)
+
+                outlier_idx += 1
+
+            elif outlier.endswith('chk'): 
+                exe_args.extend(['--pdb_file',
+                                f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb',
+                                '-c', outlier] )
+
+                # used_outliers.append(outlier)
+                used_files = client.get_dataset('used_files')
+                used_files.add_meta_string('checkpoints', os.path.basename(outlier))
+                client.put_dataset(used_files)
+
+                outlier_idx += 1
+
+            # how long to run the simulation 
+            if initial_MD: 
+                exe_args.extend(['--length', str(LEN_initial)])
+            else: 
+                exe_args.extend(['--length', str(LEN_iter)])
+
+            for exe_arg in exe_args:
+                input_dataset.add_meta_string("args", exe_arg)
+            
+            client.put_dataset(input_dataset)
+            print("Updated " + input_dataset_key)
+
+
 while True:
 
+    # Check if any MD worker has put new data on DB
     for md_worker in md_workers:
         md_dataset = client.get_dataset(md_worker)
         timestamp = float(md_dataset.get_meta_strings('timestamps')[-1])
@@ -60,6 +146,7 @@ while True:
         time.sleep(30)
         continue
 
+    # Find best ML model
     best_worker_id = None
     best_loss = None
     best_prefix = None
@@ -80,21 +167,12 @@ while True:
 
     if best_worker_id is None:
         print("Error: no ID found")
+        continue
     else:
         print(f"Using model {best_prefix} with loss {best_loss}, hyper_dim: {model_dim}")
         
     # Outlier search 
     outlier_list = [] 
-
-    ## eps records for next iteration 
-    # eps_record_filepath = './eps_record.json' 
-    # if os.path.exists(eps_record_filepath): 
-    #     eps_file = open(eps_record_filepath, 'r')
-    #     eps_record = json.load(eps_file) 
-    #     eps_file.close() 
-    # else: 
-    #     eps_record = {} 
-
 
     # Find the trajectories and contact maps 
     traj_file_list = []  # sorted(glob(os.path.join(args.md, 'omm_runs_*/*.dcd'))) 
@@ -102,6 +180,7 @@ while True:
 
     cm_predict = np.empty(shape=(0, model_dim), dtype=np.float32)
 
+    # Get latent space wrt best model for all MD frames
     for idx, md_worker in enumerate(md_workers):
         md_worker_prefix = "{"+md_worker+"}."
         latent_name = md_worker_prefix + "latent"
@@ -160,9 +239,6 @@ while True:
 
     ## Unique outliers 
     outlier_list_uni, outlier_count = np.unique(np.hstack(outlier_list), return_counts=True) 
-    ## Save the eps for next iteration 
-    # with open(eps_record_filepath, 'w') as eps_file: 
-    #         json.dump(eps_record, eps_file) 
 
     if DEBUG: 
         print (outlier_list_uni)
@@ -231,7 +307,7 @@ while True:
         R.run()    
         # Make a dict contains outliers and their RMSD
         restart_pdbs = [pdb for _, pdb in sorted(zip(R.rmsd[:,2], restart_pdbs))] 
-        print((np.min(R.rmsd[:,2]), np.max(R.rmsd[:,2]), np.mean(R.rmsd[:,2])), flush=True)
+        print(("MIN, MAX, MEAN", np.min(R.rmsd[:,2]), np.max(R.rmsd[:,2]), np.mean(R.rmsd[:,2])), flush=True)
     else: 
         random.shuffle(restart_pdbs) 
 
@@ -251,5 +327,7 @@ while True:
 
     client.put_dataset(outlier_dataset)
 
+
+    update_MD_exe_args(md_workers)
     md_updated = False
     time.sleep(60)

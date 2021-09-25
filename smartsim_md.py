@@ -8,18 +8,6 @@ from smartredis import Client, Dataset
 
 # Assumptions:
 # - # of MD steps: 2
-# - Each MD step runtime: 15 minutes
-# - Summit's scheduling policy [1]
-#
-# Resource request:
-# - 4 <= nodes with 2h walltime.
-#
-# Workflow [2]
-#
-# [1] https://www.olcf.ornl.gov/for-users/system-user-guides/summit/summit-user-guide/scheduling-policy
-# [2] https://docs.google.com/document/d/1XFgg4rlh7Y2nckH0fkiZTxfauadZn_zSn3sh51kNyKE/
-#
-
 
 gpus_per_node = 1  # 6 on Summit, 1 on Horizon
 TINY = True
@@ -29,7 +17,7 @@ HOME = os.environ.get('HOME')
 conda_path = os.environ.get('CONDA_PREFIX')
 base_path = os.path.abspath('.')
 conda_sh = '/lus/scratch/arigazzi/anaconda3/etc/profile.d/conda.sh'
-INTERFACE="ib0"
+INTERFACE="ipogif0"
 
 base_dim = 3
 
@@ -83,9 +71,9 @@ class TrainingPipeline:
         """
         
         if BATCH:
-            md_batch_args = {"nodes": node_counts, "ntasks-per-node": 1, "constraint": "V100", "exclusive": None}
+            md_batch_args = {"nodes": node_counts, "ntasks-per-node": 1, "constraint": "P100", "exclusive": None}
             md_batch_settings = SbatchSettings(time="02:00:00", batch_args=md_batch_args)
-            md_batch_settings.set_partition("spider")
+            # md_batch_settings.set_partition("spider")
             md_batch_settings.add_preamble(f'. {conda_sh}')
             md_batch_settings.add_preamble(f'conda activate {conda_path}')
             md_batch_settings.add_preamble('module load cudatoolkit')
@@ -94,8 +82,10 @@ class TrainingPipeline:
         
         os.makedirs(os.path.join(self.exp.exp_path,"omm_out"), exist_ok=True)
         md_run_settings = SrunSettings(exe="python",
-                                                exe_args=f"{base_path}/MD_exps/fs-pep/run_openmm.py",
-                                                run_args={"exclusive": None}, env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))})
+                                        exe_args=f"{base_path}/MD_exps/fs-pep/run_openmm.py",
+                                        run_args={"exclusive": None},
+                                        env_vars={"PYTHONPATH": python_path,
+                                        "SS_CLUSTER": str(int(self.cluster_db))})
         md_run_settings.set_nodes(1)
         md_run_settings.set_tasks(1)
         md_run_settings.set_tasks_per_node(1)
@@ -119,6 +109,9 @@ class TrainingPipeline:
             
         return md_ensemble
 
+
+    # This function has been relocated to the Outlier Search stage,
+    # here we should just keep the initial_MD phase
     def update_MD_exe_args(self):
         
         initial_MD = True
@@ -167,7 +160,7 @@ class TrainingPipeline:
                 self.used_outliers.append(outlier)
                 used_files = self.client.get_dataset('used_files')
                 used_files.add_meta_string('pdbs', os.path.basename(outlier))
-                super(type(self.client), self.client).put_dataset(used_files)
+                self.client.put_dataset(used_files)
 
                 outlier_idx += 1
 
@@ -179,7 +172,7 @@ class TrainingPipeline:
                 self.used_outliers.append(outlier)
                 used_files = self.client.get_dataset('used_files')
                 used_files.add_meta_string('checkpoints', os.path.basename(outlier))
-                super(type(self.client), self.client).put_dataset(used_files)
+                self.client.put_dataset(used_files)
 
                 outlier_idx += 1
 
@@ -194,7 +187,7 @@ class TrainingPipeline:
             
             self.client.put_dataset(input_dataset)
             print("Updated " + input_dataset_key)
-            
+
 
     def generate_ML_stage(self, num_ML=1): 
         """
@@ -202,8 +195,8 @@ class TrainingPipeline:
         """
 
         if BATCH:
-            ml_batch_settings = SbatchSettings(time="02:00:00", batch_args={"nodes": num_ML, "ntasks-per-node": 1, "constraint": "V100"})
-            ml_batch_settings.set_partition("spider")
+            ml_batch_settings = SbatchSettings(time="02:00:00", batch_args={"nodes": num_ML, "ntasks-per-node": 1, "constraint": "P100"})
+            # ml_batch_settings.set_partition("spider")
             ml_batch_settings.add_preamble([f'. {conda_sh}', 'module load cudatoolkit', f'conda activate {conda_path}' ])
         python_path = os.getenv("PYTHONPATH", "")
         python_path = f"{base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:" + python_path
@@ -239,7 +232,6 @@ class TrainingPipeline:
                     ml_ensemble.register_incoming_entity(entity)
 
 
-
         self.exp.generate(ml_ensemble, overwrite=True)
         return ml_ensemble 
 
@@ -252,7 +244,9 @@ class TrainingPipeline:
                                                 exe_args=['outlier_locator.py',
                                                 '--md', os.path.join(self.exp.exp_path, 'omm_out'), 
                                                 '--pdb', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb', 
-                                                '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb'],
+                                                '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb',
+                                                '--len_initial', str(LEN_initial),
+                                                '--len_iter', str(LEN_iter)],
                                                 env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))})
         interfacing_run_settings.set_nodes(1)
         interfacing_run_settings.set_tasks_per_node(1)
@@ -264,7 +258,7 @@ class TrainingPipeline:
                                                     'module load cudatoolkit',
                                                     f'conda activate {conda_path}',
                                                     ])
-            interfacing_batch_settings.set_partition("spider")
+            # interfacing_batch_settings.set_partition("spider")
         # Scanning for outliers and prepare the next stage of MDs 
         if BATCH:
             interfacing_ensemble = self.exp.create_ensemble('SmartSim-Outlier_search', batch_settings=interfacing_batch_settings)
@@ -314,13 +308,21 @@ class TrainingPipeline:
         self.exp.start(self.interfacing_stage, block=False)
 
         while True:
-            self.update_MD_exe_args()
-            time.sleep(15)
+            #self.update_MD_exe_args()
+            # Here possibly plot info about simulation
+            print("Simulation is running")
+            time.sleep(120)
 
 
     def __del__(self):
-        self.exp.stop(self.interfacing_stage, self.ml_stage, self.md_stage)
-        self.exp.stop(self.orchestrator)
+        try:
+            self.exp.stop(self.interfacing_stage, self.ml_stage, self.md_stage)
+        except:
+            print("Some stage could not be stopped, please stop processes manually")
+        try:
+            self.exp.stop(self.orchestrator)
+        except:
+            print("Orchestrator could not be stopped, please stop it manually")
 
 if __name__ == '__main__':
 

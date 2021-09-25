@@ -6,13 +6,13 @@ import os
 
 
 exp = Experiment(name="test-cvae", launcher="slurm")
-orchestrator = SlurmOrchestrator(db_nodes=1, time="00:10:00", interface="ib0")
+orchestrator = SlurmOrchestrator(db_nodes=1, time="00:10:00", interface="ipogif0")
 exp.generate(orchestrator)
 exp.start(orchestrator)
 
 base_path = os.path.abspath('.')
 
-alloc = slurm.get_allocation(time="00:08:00", options={"constraint": "V100", "partition": "spider"})
+alloc = slurm.get_allocation(time="00:08:00", options={"constraint": "P100"})
 
 pythonpath = os.getenv("PYTHONPATH")
 

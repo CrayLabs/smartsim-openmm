@@ -45,7 +45,7 @@ def save_model_to_db(client, model, prefix):
     model_serialized = frozen_func.graph.as_graph_def().SerializeToString(deterministic=True)
 
     client.set_model("_".join([prefix,model.name]), model=model_serialized, tag="",
-                    backend="TF", device="CPU", inputs=input_names, outputs=output_names)
+                    backend="TF", device="GPU", inputs=input_names, outputs=output_names)
 
 
 if __name__ == '__main__': 
@@ -59,23 +59,24 @@ if __name__ == '__main__':
             continue
         prefix = "_".join((str(int(time.time())), str(hyper_dim)))
 
-        
         # We don't need this, we only need the encoder
         # save_model_to_db(client, cvae, prefix)
 
         client.put_tensor(prefix+"_loss", np.array(cvae.history_call.losses))
         save_model_to_db(client, cvae.encoder, prefix)
 
+        # Write to db
         dataset_name = os.getenv("SSKEYOUT")
         print(f"Writing to {dataset_name}")
         if client.key_exists(dataset_name):
             dataset = client.get_dataset(dataset_name)
-            dtype = Dtypes.tensor_from_numpy(np.asarray(hyper_dim))
             dataset.add_meta_string("prefixes", prefix)
-            dataset.add_meta_scalar("latent_dims", np.asarray(hyper_dim), dtype)
-            super(type(client), client).put_dataset(dataset)
+            dataset.add_meta_scalar("latent_dims", np.asarray(hyper_dim))
+            client.put_dataset(dataset)
         else:
             dataset = Dataset(dataset_name)
             dataset.add_meta_string("prefixes", prefix)
             dataset.add_meta_scalar("latent_dims", int(hyper_dim))
             client.put_dataset(dataset)
+
+        time.sleep(60)

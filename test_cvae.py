@@ -28,7 +28,7 @@ def save_model_to_db(client, model, prefix):
     model_serialized = frozen_func.graph.as_graph_def().SerializeToString(deterministic=True)
 
     client.set_model("_".join([prefix,model.name]), model=model_serialized, tag="",
-                    backend="TF", device="CPU", inputs=input_names, outputs=output_names)
+                    backend="TF", device="GPU", inputs=input_names, outputs=output_names)
 
 cm_data_train = np.random.rand(100,22,22,1).astype(np.float32)
 cm_data_val = np.random.rand(40,22,22,1).astype(np.float32)

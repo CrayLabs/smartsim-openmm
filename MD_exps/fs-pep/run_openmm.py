@@ -1,4 +1,4 @@
-import simtk.unit as u
+import openmm.unit as u
 import sys, os, shutil 
 import time
 import argparse 
