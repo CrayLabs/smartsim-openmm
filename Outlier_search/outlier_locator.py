@@ -55,6 +55,11 @@ md_updated = True
 
 eps_record = {} 
 
+used_files = Dataset('used_files')
+used_files.add_meta_string('pdbs', '100-fs-peptide-400K.pdb')
+used_files.add_meta_string('checkpoints', '_.chk')  # Fake, just to initialize field
+client.put_dataset(used_files)
+
 def update_MD_exe_args(md_workers):
         
         initial_MD = True

@@ -10,7 +10,7 @@ from smartredis import Client, Dataset
 # - # of MD steps: 2
 
 gpus_per_node = 1  # 6 on Summit, 1 on Horizon
-TINY = True
+TINY = False
 BATCH = False
 
 HOME = os.environ.get('HOME')
@@ -58,10 +58,6 @@ class TrainingPipeline:
             self.exp.start(self.orchestrator)
         self.client = Client(address=self.orchestrator.get_address()[0], cluster=self.cluster_db)
 
-        used_files = Dataset('used_files')
-        used_files.add_meta_string('pdbs', '100-fs-peptide-400K.pdb')
-        used_files.add_meta_string('checkpoints', '_.chk')  # Fake, just to initialize field
-        self.client.put_dataset(used_files)
         return
 
 
@@ -114,79 +110,23 @@ class TrainingPipeline:
     # here we should just keep the initial_MD phase
     def update_MD_exe_args(self):
         
-        initial_MD = True
-
-        if self.client.key_exists('outliers'):
-            outliers = self.client.get_dataset('outliers')
-            try:
-                outlier_list = outliers.get_meta_strings('points')
-                # Filter out used files -- we need this because we are async
-                [outlier_list.remove(outlier) for outlier in outlier_list if outlier in self.used_outliers]
-                num_outliers = len(outlier_list)
-            except:
-                outlier_list = []
-                num_outliers = 0
-        else:
-            num_outliers = 0
-        
-        initial_MD = num_outliers == 0
-
-        # MD tasks
         time_stamp = int(time.time())
 
-        outlier_idx = 0
         for (i, omm) in enumerate(self.md_stage.entities):
-            if not initial_MD:
-                outlier = outlier_list[outlier_idx]
-
             input_dataset_key = omm.name + "_input"
-            if self.client.key_exists(input_dataset_key):
-                continue
-            
             input_dataset = Dataset(input_dataset_key)
 
             exe_args = []
             exe_args.extend(["--output_path",
                             os.path.join(self.exp.exp_path,"omm_out",f"omm_runs_{i:02d}_{time_stamp+i}"),
-                            "-g", str(i%gpus_per_node)])
-
-            # pick initial point of simulation 
-            if initial_MD or outlier_idx >= len(outlier_list): 
-                exe_args.extend(['--pdb_file', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb'])
-
-            elif outlier.endswith('pdb'): 
-                exe_args.extend(['--pdb_file', outlier])
-
-                self.used_outliers.append(outlier)
-                used_files = self.client.get_dataset('used_files')
-                used_files.add_meta_string('pdbs', os.path.basename(outlier))
-                self.client.put_dataset(used_files)
-
-                outlier_idx += 1
-
-            elif outlier.endswith('chk'): 
-                exe_args.extend(['--pdb_file',
-                                f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb',
-                                '-c', outlier] )
-
-                self.used_outliers.append(outlier)
-                used_files = self.client.get_dataset('used_files')
-                used_files.add_meta_string('checkpoints', os.path.basename(outlier))
-                self.client.put_dataset(used_files)
-
-                outlier_idx += 1
-
-            # how long to run the simulation 
-            if initial_MD: 
-                exe_args.extend(['--length', str(LEN_initial)])
-            else: 
-                exe_args.extend(['--length', str(LEN_iter)])
+                            "-g", str(i%gpus_per_node),
+                            '--pdb_file', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb',
+                            '--length', str(LEN_initial)])
 
             for exe_arg in exe_args:
                 input_dataset.add_meta_string("args", exe_arg)
             
             self.client.put_dataset(input_dataset)
-            print("Updated " + input_dataset_key)
 
 
     def generate_ML_stage(self, num_ML=1): 
