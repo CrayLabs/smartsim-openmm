@@ -1,10 +1,14 @@
+import io
 import os 
 import numpy as np
 import errno 
 import MDAnalysis as mda 
-from tensorflow.keras import backend as K 
+from MDAnalysis.lib.util import NamedStream
+from numpy.core.fromnumeric import put
 from sklearn.cluster import DBSCAN 
+import MDAnalysis.coordinates as MDCoords
 
+from smartsim_utils import get_text_file, put_strings_as_file
 
 def find_frame(traj_dict, frame_number=0): 
     local_frame = frame_number
@@ -26,7 +30,25 @@ def write_pdb_frame(traj_file, pdb_file, frame_number, output_pdb):
     PDB = mda.Writer(output_pdb)
     PDB.write(mda_traj.atoms)     
     return output_pdb
-    
+
+
+def write_pdb_frame_to_db(traj_file, pdb_file, frame_number, output_pdb, client):
+    pdb_strings = get_text_file(pdb_file, client)
+    pdb_stream = NamedStream(io.StringIO("\n".join(pdb_strings), newline="\n"), pdb_file)
+    mda_traj = mda.Universe(pdb_stream, traj_file)
+    mda_traj.trajectory[frame_number]
+
+    output_stream = NamedStream(io.StringIO(), output_pdb)
+    PDB = MDCoords.PDB.PDBWriter(output_stream, multiframe=True)
+    PDB.write(mda_traj.atoms) 
+    PDB.close()
+    del PDB
+    output_stream.seek(0)
+    try:
+        put_strings_as_file(filename=output_pdb, strings=output_stream.readlines(), client=client)
+    except IOError:
+        # IOError means that the file already exists, we don't need to replace it as it would be the same
+        return
 
 def make_dir_p(path_name): 
     try:

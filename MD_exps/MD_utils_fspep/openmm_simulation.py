@@ -7,6 +7,9 @@ import random
 import os
 from .openmm_reporter import ContactMapReporter, SmartSimContactMapReporter
 
+from smartredis import Client
+from smartsim_utils import get_text_file
+
 
 def openmm_simulate_charmm_nvt(top_file, pdb_file, check_point=None, GPU_index=0,  
         output_traj="output.dcd", output_log="output.log", output_cm=None, 
@@ -199,14 +202,24 @@ def openmm_simulate_amber_fs_pep(pdb_file, top_file=None, check_point=None, GPU_
     sim_time : 10 ns
         The timespan of the simulation trajectory
     """
-
-    if top_file: 
-        pdb = pmd.load_file(top_file, xyz = pdb_file)
+    client = Client(None, bool(int(os.getenv("SS_CLUSTER", False))))
+    if top_file:
+        try:
+            pdb_strings = get_text_file(pdb_file, client)
+        except IOError:
+            print(f"Warning, file {pdb_file} was not found in Database. Proceeding to next candidate.")
+            return
+        pdb = pmd.read_PDB(top_file, xyz = pdb_strings)
         system = pdb.createSystem(nonbondedMethod=app.CutoffNonPeriodic, 
                 nonbondedCutoff=1.0*u.nanometer, constraints=app.HBonds, 
                 implicitSolvent=app.OBC1)
     else: 
-        pdb = pmd.load_file(pdb_file)
+        try:
+            pdb_strings = get_text_file(pdb_file, client)
+        except IOError:
+            print(f"Warning, file {pdb_file} was not found in Database. Proceeding to next candidate.")
+            return
+        pdb = pmd.read_PDB(pdb_strings)
         forcefield = app.ForceField('amber99sbildn.xml', 'amber99_obc.xml')
         system = forcefield.createSystem(pdb.topology, nonbondedMethod=app.CutoffNonPeriodic, 
                 nonbondedCutoff=1.0*u.nanometer, constraints=app.HBonds)

@@ -5,6 +5,7 @@ from smartsim.settings import SrunSettings, SbatchSettings
 from smartsim.database import SlurmOrchestrator
 
 from smartredis import Client, Dataset
+from smartsim_utils import put_text_file
 
 # Assumptions:
 # - # of MD steps: 2
@@ -15,7 +16,7 @@ BATCH = False
 
 HOME = os.environ.get('HOME')
 conda_path = os.environ.get('CONDA_PREFIX')
-base_path = os.path.abspath('.')
+base_path = os.path.abspath(os.curdir)
 conda_sh = '/lus/scratch/arigazzi/anaconda3/etc/profile.d/conda.sh'
 INTERFACE="ipogif0"
 
@@ -74,7 +75,7 @@ class TrainingPipeline:
             md_batch_settings.add_preamble(f'conda activate {conda_path}')
             md_batch_settings.add_preamble('module load cudatoolkit')
         python_path = os.getenv("PYTHONPATH", "")
-        python_path = f"{base_path}/MD_exps:{base_path}/MD_exps/MD_utils_fspep:" + python_path
+        python_path = f"{base_path}:{base_path}/MD_exps:{base_path}/MD_exps/MD_utils_fspep:" + python_path
         
         os.makedirs(os.path.join(self.exp.exp_path,"omm_out"), exist_ok=True)
         md_run_settings = SrunSettings(exe="python",
@@ -102,7 +103,7 @@ class TrainingPipeline:
             
             md_ensemble.enable_key_prefixing()
             self.exp.generate(md_ensemble, overwrite=True)
-            
+        
         return md_ensemble
 
 
@@ -110,15 +111,15 @@ class TrainingPipeline:
     # here we should just keep the initial_MD phase
     def update_MD_exe_args(self):
         
-        time_stamp = int(time.time())
-
+        iter_id = 0
+        put_text_file(f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb', self.client)
         for (i, omm) in enumerate(self.md_stage.entities):
             input_dataset_key = omm.name + "_input"
             input_dataset = Dataset(input_dataset_key)
 
             exe_args = []
             exe_args.extend(["--output_path",
-                            os.path.join(self.exp.exp_path,"omm_out",f"omm_runs_{i:02d}_{time_stamp+i}"),
+                            os.path.join(self.exp.exp_path,"omm_out",f"omm_runs_{i:02d}_{iter_id:06d}"),
                             "-g", str(i%gpus_per_node),
                             '--pdb_file', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb',
                             '--length', str(LEN_initial)])
@@ -205,7 +206,8 @@ class TrainingPipeline:
 
         interfacing_model = self.exp.create_model('SmartSim-Outlier_search', run_settings=interfacing_run_settings)
         interfacing_model.attach_generator_files(to_copy = [os.path.join(base_path, "Outlier_search", "outlier_locator.py"),
-                                                            os.path.join(base_path, "Outlier_search", "utils.py")])
+                                                            os.path.join(base_path, "Outlier_search", "utils.py"),
+                                                            os.path.join(base_path,'smartsim_utils.py')])
 
         if BATCH:
             interfacing_ensemble.add_model(interfacing_model)

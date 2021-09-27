@@ -1,16 +1,23 @@
 import os, random, json, shutil, time
+from smartsim_utils import get_text_stream
 import argparse 
 import numpy as np 
 from glob import glob
 import MDAnalysis as mda
-from utils import outliers_from_latent
+from numpy.lib.arraysetops import unique
+from utils import outliers_from_latent, write_pdb_frame_to_db
 from utils import find_frame, write_pdb_frame, make_dir_p 
 from  MDAnalysis.analysis.rms import RMSD
+from MDAnalysis.lib.util import NamedStream
 
 from smartredis import Client, Dataset
+from smartredis.error import RedisReplyError
 import smartredis
 
-DEBUG = 0
+DEBUG = 1
+
+max_outliers = 50  # original: 150
+base_eps = 0.5  # original: 0.2
 
 # Inputs 
 parser = argparse.ArgumentParser()
@@ -34,10 +41,12 @@ incoming_entities = os.getenv("SSKEYIN")
 md_workers = []
 ml_workers = []
 md_timestamps = {}
+md_iters = {}
 for key in incoming_entities.split(":"):
     if key.startswith("openmm"):
         md_workers.append(key)
         md_timestamps[key] = 0.0
+        md_iters[key] = 0
     if key.startswith("cvae"):
         ml_workers.append(key)
 
@@ -60,7 +69,13 @@ used_files.add_meta_string('pdbs', '100-fs-peptide-400K.pdb')
 used_files.add_meta_string('checkpoints', '_.chk')  # Fake, just to initialize field
 client.put_dataset(used_files)
 
-def update_MD_exe_args(md_workers):
+# Index of outlier in outliers_list
+# to avoid re-using the same outlier
+# if the list was not updated
+# reset to 0 every time outliers_list
+# is updated
+
+def update_MD_exe_args(md_workers, outlier_idx):
         
         initial_MD = True
 
@@ -68,8 +83,6 @@ def update_MD_exe_args(md_workers):
             outliers = client.get_dataset('outliers')
             try:
                 outlier_list = outliers.get_meta_strings('points')
-                # Filter out used files -- we need this because we are async
-                # [outlier_list.remove(outlier) for outlier in outlier_list if outlier in used_outliers]
                 num_outliers = len(outlier_list)
             except:
                 outlier_list = []
@@ -79,10 +92,8 @@ def update_MD_exe_args(md_workers):
         
         initial_MD = num_outliers == 0
 
-        # MD tasks
-        time_stamp = int(time.time())
+        
 
-        outlier_idx = 0
         for (i, omm) in enumerate(md_workers):
             if not initial_MD:
                 outlier = outlier_list[outlier_idx]
@@ -94,8 +105,9 @@ def update_MD_exe_args(md_workers):
             input_dataset = Dataset(input_dataset_key)
 
             exe_args = []
+            md_iters[omm] += 1
             exe_args.extend(["--output_path",
-                            os.path.join(exp_path,"omm_out",f"omm_runs_{i:02d}_{time_stamp+i}"),
+                            os.path.join(exp_path,"omm_out",f"omm_runs_{i:02d}_{md_iters[omm]:06d}"),
                             "-g", str(i%args.gpus_per_node)])
 
             # pick initial point of simulation 
@@ -134,8 +146,10 @@ def update_MD_exe_args(md_workers):
                 input_dataset.add_meta_string("args", exe_arg)
             
             client.put_dataset(input_dataset)
-            print("Updated " + input_dataset_key)
+            print("Updated " + input_dataset_key, flush=True)
 
+
+outlier_idx = 0
 
 while True:
 
@@ -148,8 +162,10 @@ while True:
             md_timestamps[md_worker] = timestamp
 
     if not md_updated:
+        update_MD_exe_args(md_workers, outlier_idx)
         time.sleep(30)
         continue
+    
 
     # Find best ML model
     best_worker_id = None
@@ -180,9 +196,7 @@ while True:
     outlier_list = [] 
 
     # Find the trajectories and contact maps 
-    traj_file_list = []  # sorted(glob(os.path.join(args.md, 'omm_runs_*/*.dcd'))) 
-    checkpnt_list = []  # sorted(glob(os.path.join(args.md, 'omm_runs_*/checkpnt.chk'))) 
-
+    
     cm_predict = np.empty(shape=(0, model_dim), dtype=np.float32)
 
     # Get latent space wrt best model for all MD frames
@@ -225,9 +239,9 @@ while True:
 
     # initialize eps if empty 
     if str(best_prefix) in eps_record.keys():
-        eps = eps_record[best_prefix]
+        eps = eps_record[str(best_prefix)]
     else:
-        eps = 0.2
+        eps = base_eps
 
     # Search the right eps for DBSCAN 
     while True: 
@@ -235,7 +249,7 @@ while True:
         n_outlier = len(outliers) 
         print('dimension = {0}, eps = {1:.2f}, number of outliers found: {2}'.format(
             model_dim, eps, n_outlier))
-        if n_outlier > 150: 
+        if n_outlier > max_outliers: 
             eps = eps + 0.05 
         else: 
             eps_record[best_prefix] = eps 
@@ -263,17 +277,26 @@ while True:
         if not os.path.exists(outlier_pdb_file): 
             print ('Found a new outlier# {} at frame {} of {}'.format(outlier,
                 num_frame, traj_file))
-            outlier_pdb = write_pdb_frame(traj_file, pdb_file, num_frame, outlier_pdb_file)  
+            # outlier_pdb = write_pdb_frame(traj_file, pdb_file, num_frame, outlier_pdb_file)  
+            write_pdb_frame_to_db(traj_file, pdb_file, num_frame, outlier_pdb_file, client)
             print ('     Written as {}'.format(outlier_pdb_file))
         new_outliers_list.append(outlier_pdb_file) 
 
-    # Clean up outdated outliers 
-    outliers_list = glob(os.path.join(outliers_pdb_path, 'omm_runs*.pdb')) 
+    # Clean up outdated outliers
+    outliers_list = []
+    try:
+        outliers = client.get_dataset('outliers').get_meta_strings('points')
+        outliers_list = [outlier for outlier in outliers if outlier.endswith('.pdb')]
+    except RedisReplyError:
+        print("No outlier from previous runs was found")
+
+    #outliers_list = glob(os.path.join(outliers_pdb_path, 'omm_runs*.pdb')) 
     for outlier in outliers_list: 
         if outlier not in new_outliers_list: 
             print (f'Old outlier {os.path.basename(outlier)} is now connected to a cluster and removing it' \
             + ' from the outlier list ')
-            os.rename(outlier, os.path.join(os.path.dirname(outlier), '_'+os.path.basename(outlier))) 
+            client.rename_dataset(outlier, os.path.join(os.path.dirname(outlier), '_'+os.path.basename(outlier)))
+            # os.rename(outlier, os.path.join(os.path.dirname(outlier), '_'+os.path.basename(outlier))) 
 
 
     # Set up input configurations for next batch of MD simulations 
@@ -283,11 +306,12 @@ while True:
     used_files = client.get_dataset('used_files')
 
     used_pdbs_basenames = used_files.get_meta_strings('pdbs')
-    outliers_list = glob(os.path.join(outliers_pdb_path, 'omm_runs*.pdb'))
-    restart_pdbs = [outlier for outlier in outliers_list if os.path.basename(outlier) not in used_pdbs_basenames] 
+    # outliers_list = glob(os.path.join(outliers_pdb_path, 'omm_runs*.pdb'))
+    restart_pdbs = [outlier for outlier in new_outliers_list if os.path.basename(outlier) not in used_pdbs_basenames] 
 
-    ## Restarts from check point 
+    ## Restarts from NEW check point
     #used_checkpnts = glob(os.path.join(args.md, 'omm_runs_*/omm_runs_*.chk'))
+    outliers_list = new_outliers_list
     used_checkpnts = used_files.get_meta_strings('checkpoints')
     restart_checkpnts = [] 
     for checkpnt in checkpnt_list: 
@@ -295,18 +319,22 @@ while True:
         if not os.path.basename(checkpnt_filepath) in used_checkpnts and not os.path.exists(checkpnt_filepath): 
             shutil.copy2(checkpnt, checkpnt_filepath) 
             if DEBUG:
-                print ([os.path.basename(os.path.dirname(checkpnt)) in outlier for
-                    outlier in outliers_list])
+                print(os.path.basename(os.path.dirname(checkpnt)))
+                print(outliers_list)
+                print ([os.path.basename(os.path.dirname(checkpnt)) in outlier for outlier in outliers_list])
             if any(os.path.basename(os.path.dirname(checkpnt)) in outlier for outlier in outliers_list):  
-                restart_checkpnts.append(checkpnt_filepath) 
+                restart_checkpnts.append(checkpnt_filepath)
 
     if DEBUG: 
-        print (restart_checkpnts)
-        print (restart_pdbs)
+        print ("CHK", restart_checkpnts)
+        print ("PDB", restart_pdbs)
 
     # rank the restart_pdbs according to their RMSD to local state 
+    restart_pdb_streams = [NamedStream(get_text_stream(filename, client), filename) for filename in restart_pdbs]
+    
+
     if ref_pdb_file: 
-        outlier_traj = mda.Universe(restart_pdbs[0], restart_pdbs) 
+        outlier_traj = mda.Universe(restart_pdb_streams[0], restart_pdb_streams) 
         ref_traj = mda.Universe(ref_pdb_file) 
         R = RMSD(outlier_traj, ref_traj, select='protein and name CA') 
         R.run()    
@@ -332,7 +360,7 @@ while True:
 
     client.put_dataset(outlier_dataset)
 
-
-    update_MD_exe_args(md_workers)
+    outlier_idx = 0
+    update_MD_exe_args(md_workers, outlier_idx)
     md_updated = False
     time.sleep(60)
