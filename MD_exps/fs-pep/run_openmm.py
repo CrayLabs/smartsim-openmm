@@ -1,9 +1,11 @@
 import openmm.unit as u
 import sys, os, shutil 
-import time
+import time, io
 import argparse 
 from smartredis import Client, Dataset
 from smartredis.error import RedisReplyError
+
+from smartsim_utils import put_strings_as_file
 
 from MD_utils_fspep.openmm_simulation import openmm_simulate_amber_fs_pep 
 
@@ -27,6 +29,8 @@ else:
     input_dataset_key =  keyout + "_input"
 
 iteration = 0
+
+binary_files = False
 
 while not stop:
     if not client.key_exists(input_dataset_key):
@@ -64,17 +68,45 @@ while not stop:
             output_path = args.output_path
             os.makedirs(output_path)
 
-            try:
-                openmm_simulate_amber_fs_pep(pdb_file,
-                                            check_point=check_point,
-                                            GPU_index=gpu_index,
-                                            output_traj=os.path.join(output_path, "output.dcd"),
-                                            output_log=os.path.join(output_path, "output.log"),
-                                            report_time=50*u.picoseconds,
-                                            sim_time=float(args.length)*u.nanoseconds)
-            except (OSError, IOError):
-                print("Simulation raised OS or I/O error. This could happen if a file was moved.\n"
-                      "If this happens frequently, check the pipeline.")
+            dcd_stream = io.BytesIO()
+            chk_stream = io.BytesIO()
+            output_traj = os.path.join(output_path, "output.dcd")
+            output_log = os.path.join(output_path, "output.log")
+            chk_file = os.path.join(output_path, 'checkpnt.chk')
+            if binary_files:
+                try:
+                    openmm_simulate_amber_fs_pep(pdb_file,
+                                                check_point=check_point,
+                                                GPU_index=gpu_index,
+                                                output_traj=output_traj,
+                                                output_log=output_log,
+                                                report_time=50*u.picoseconds,
+                                                sim_time=float(args.length)*u.nanoseconds,
+                                                output_path=output_path)
+                except (OSError, IOError):
+                    print("Simulation raised OS or I/O error. This could happen if a file was moved.\n"
+                        "If this happens frequently, check the pipeline.")
+            else:
+                try:
+                    openmm_simulate_amber_fs_pep(pdb_file,
+                                                check_point=check_point,
+                                                chk_stream=chk_stream,
+                                                dcd_stream=dcd_stream,
+                                                GPU_index=gpu_index,
+                                                output_log=output_log,
+                                                report_time=50*u.picoseconds,
+                                                sim_time=float(args.length)*u.nanoseconds,
+                                                output_path=output_path)
+                except (OSError, IOError):
+                    print("Simulation raised OS or I/O error. This could happen if a file was moved.\n"
+                        "If this happens frequently, check the pipeline.")
+
+                dcd_stream.seek(0)
+                chk_stream.seek(0)
+
+                put_strings_as_file(output_traj, [dcd_stream.getvalue().decode('latin1')], client)
+                put_strings_as_file(chk_file, [chk_stream.getvalue().decode('latin1')], client)
+
             client.delete_dataset(input_dataset_key)
             print(f"Completed iteration #{iteration}", flush=True)
             iteration += 1

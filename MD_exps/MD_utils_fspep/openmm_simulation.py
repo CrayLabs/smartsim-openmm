@@ -5,11 +5,14 @@ import openmm.unit as u
 import parmed as pmd
 import random
 import os
-from .openmm_reporter import ContactMapReporter, SmartSimContactMapReporter
+from .openmm_reporter import (ContactMapReporter,
+                              SmartSimContactMapReporter,
+                              SmartSimDCDReporter)
 
 from smartredis import Client
-from smartsim_utils import get_text_file
+from smartsim_utils import get_binary_stream, get_text_file, get_binary_file
 
+binary_files = False
 
 def openmm_simulate_charmm_nvt(top_file, pdb_file, check_point=None, GPU_index=0,  
         output_traj="output.dcd", output_log="output.log", output_cm=None, 
@@ -165,9 +168,10 @@ def openmm_simulate_amber_nvt(top_file, pdb_file, GPU_index=0,
     simulation.step(nsteps)
 
 
-def openmm_simulate_amber_fs_pep(pdb_file, top_file=None, check_point=None, GPU_index=0,
-        output_traj="output.dcd", output_log="output.log", output_cm=None,
-        report_time=10*u.picoseconds, sim_time=10*u.nanoseconds):
+def openmm_simulate_amber_fs_pep(pdb_file, dcd_stream=None, chk_stream=None,
+        top_file=None, check_point=None, GPU_index=0,
+        output_traj=None, output_log="output.log", output_cm=None,
+        report_time=10*u.picoseconds, sim_time=10*u.nanoseconds,output_path='.'):
     """
     Start and run an OpenMM NVT simulation with Langevin integrator at 2 fs 
     time step and 300 K. The cutoff distance for nonbonded interactions were 
@@ -245,20 +249,28 @@ def openmm_simulate_amber_fs_pep(pdb_file, top_file=None, check_point=None, GPU_
     simulation.step(int(100*u.picoseconds / (2*u.femtoseconds)))
 
     report_freq = int(report_time/dt)
-    simulation.reporters.append(app.DCDReporter(output_traj, report_freq))
+    if output_traj is not None:
+        simulation.reporters.append(app.DCDReporter(output_traj, report_freq))
+    if dcd_stream is not None:
+        simulation.reporters.append(SmartSimDCDReporter(dcd_stream, report_freq))
     if output_cm:
         simulation.reporters.append(ContactMapReporter(output_cm, report_freq))
-    path_to_out = os.path.dirname(output_traj)
-    simulation.reporters.append(SmartSimContactMapReporter(report_freq, path_to_out))
+    simulation.reporters.append(SmartSimContactMapReporter(report_freq, output_path))
     simulation.reporters.append(app.StateDataReporter(output_log,
             report_freq, step=True, time=True, speed=True,
             potentialEnergy=True, temperature=True, totalEnergy=True))
 
-    chk_file = os.path.join(path_to_out, 'checkpnt.chk')
-    simulation.reporters.append(app.CheckpointReporter(chk_file, report_freq))
-
+    if output_traj is not None:
+        chk_file = os.path.join(output_path, 'checkpnt.chk')
+        simulation.reporters.append(app.CheckpointReporter(chk_file, report_freq))
+    if chk_stream is not None:
+        simulation.reporters.append(app.CheckpointReporter(chk_stream, report_freq))
     if check_point:
-        simulation.loadCheckpoint(check_point)
+        if binary_files:
+            simulation.loadCheckpoint(check_point)
+        else:
+            stored_check_point = get_binary_stream(check_point, client)
+            simulation.loadCheckpoint(stored_check_point)
     nsteps = int(sim_time/dt)
     simulation.step(nsteps)
 

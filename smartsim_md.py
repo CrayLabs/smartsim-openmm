@@ -27,13 +27,11 @@ if TINY:
     LEN_iter = 3
     md_counts = gpus_per_node*2
     ml_counts = 2
-    MAX_STAGE = 4
 else:
     LEN_initial = 10
-    LEN_iter = 10
+    LEN_iter = 5  # this is mainly to test asynchronous behavior
     md_counts = 6
     ml_counts = 6
-    MAX_STAGE = 10
 
 node_counts = md_counts // gpus_per_node
 

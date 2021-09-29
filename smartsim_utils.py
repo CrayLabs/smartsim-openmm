@@ -1,6 +1,6 @@
 from smartredis import Client, Dataset
 from smartredis.error import RedisReplyError
-from io import StringIO
+from io import StringIO, BytesIO
 import os
 import time
 
@@ -20,8 +20,6 @@ def put_text_file(filename, client: Client, overwrite=False):
                         overwritten if it already exists
     :type overwrite: bool
     """
-
-    # file_basename = os.path.basename(filename)
 
     if client.key_exists(filename):
         if overwrite:
@@ -110,15 +108,8 @@ def get_text_stream(filename, client: Client):
     :returns: Content of text file
     :rtype: list[str]
     """
-    attempts = 5
-    while attempts>0:
-        try:
-            return StringIO(initial_value="\n".join(client.get_dataset(filename).get_meta_strings("content")))
-        except RedisReplyError:
-            attempts -= 1
-            time.sleep(5)
-    
-    raise IOError(f"File {filename} does not exist in database.")
+    file_content = get_text_file(filename, client)
+    return StringIO(initial_value="\n".join(file_content))
 
 
 def save_text_file(filename, client: Client, exist_ok=True, path=None):
@@ -158,3 +149,78 @@ def save_text_file(filename, client: Client, exist_ok=True, path=None):
     with open(filename, 'w') as file:
         for line in dataset.get_meta_strings("content"):
             file.write(line)
+
+
+def put_bytes_as_file(filename, content, client, overwrite):
+    """Put bytes on the DB -- WARNING: this is an experimental feature
+
+    The binary file is converted to a string using ``latin-1`` encoder
+    which provides a 1:1 bytes:char mapping.
+
+    Args:
+        filename ([type]): [description]
+        :param content: The content of the binary file to store
+        :type content: bytes
+        client ([type]): [description]
+    """
+
+    str_content = content.decode('latin1')
+    put_strings_as_file(filename, [str_content], client, overwrite)
+
+
+def get_binary_file(filename, client):
+    """Get the content of a stored binary file -- WARNING this is an experimental feature
+
+    Args:
+        filename ([type]): [description]
+        client ([type]): [description]
+    """
+
+    str_content = get_text_file(filename, client)
+    byte_content = str_content[0].encode('latin1')
+
+    return byte_content
+
+
+def get_binary_stream(filename, client):
+
+    return BytesIO(initial_bytes=get_binary_file(filename, client))
+
+
+def save_binary_file(filename, client: Client, exist_ok=True, path=None):
+    """Store a text file contained in dataset to file system.
+    
+    If `path` is ``None``, `filename` is used as  destination to store the file content.
+    If `path` is not ``None``, the file will be stored as 
+    ``os.path.join(path, os.path.basename(filename))``
+
+    The value of `filename` is used as key to get the dataset from
+    the database. If the key does not exist, a `IOError` is raised.
+
+    :param filename: Name of file to write. 
+    :type filename: str
+    :param client: Client to orchestrator
+    :type client: SmartRedis.Client
+    :param exists_ok: Whether the path to the file must be created if it
+                      already exists. Defaults to ``True``.
+    :type exist_ok: bool
+    :param path: File system path on which the file must be saved. If set
+                 to ``None``, the path will be inferred from `filename`.
+    """
+
+    if not client.key_exists(filename):
+        raise IOError(f"File {filename} does not exist on database.")
+
+    dataset = client.get_dataset(filename)
+
+    file_basename = os.path.basename(filename)
+    if path is None:
+        path = os.path.dirname(filename)
+
+    filename = os.path.join(path, file_basename)
+
+    os.makedirs(path, exist_ok=exist_ok)
+
+    with open(filename, 'wb') as file:
+        for line in dataset.get_meta_strings("content"):
+            file.write(line.encode('latin1'))

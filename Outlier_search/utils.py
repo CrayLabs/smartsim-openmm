@@ -8,7 +8,9 @@ from numpy.core.fromnumeric import put
 from sklearn.cluster import DBSCAN 
 import MDAnalysis.coordinates as MDCoords
 
-from smartsim_utils import get_text_file, put_strings_as_file
+from smartsim_utils import get_text_file, get_text_stream, put_strings_as_file, save_binary_file
+
+binary_files = False
 
 def find_frame(traj_dict, frame_number=0): 
     local_frame = frame_number
@@ -33,9 +35,19 @@ def write_pdb_frame(traj_file, pdb_file, frame_number, output_pdb):
 
 
 def write_pdb_frame_to_db(traj_file, pdb_file, frame_number, output_pdb, client):
+
     pdb_strings = get_text_file(pdb_file, client)
     pdb_stream = NamedStream(io.StringIO("\n".join(pdb_strings), newline="\n"), pdb_file)
-    mda_traj = mda.Universe(pdb_stream, traj_file)
+
+    if binary_files:
+        mda_traj = mda.Universe(pdb_stream, traj_file)
+    else:
+        # We cannot use a stream for MDAnalysis (DCDFile does not accept it)
+        # We write the file because we need it
+        if not os.path.exists(traj_file):
+            save_binary_file(traj_file, client)
+        mda_traj = mda.Universe(pdb_stream, traj_file)
+
     mda_traj.trajectory[frame_number]
 
     output_stream = NamedStream(io.StringIO(), output_pdb)
