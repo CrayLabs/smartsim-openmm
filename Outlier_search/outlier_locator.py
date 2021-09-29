@@ -183,6 +183,11 @@ while True:
         dataset = client.get_dataset(ml_worker)
         prefixes = dataset.get_meta_strings("prefixes")
         latent_dims = dataset.get_meta_scalars("latent_dims").astype(np.int64)
+
+        # Experimental feature, use only last five model generations
+        if len(latent_dims) > 5:
+            prefixes=prefixes[-5:]
+            latent_dims = latent_dims[-5:]
         for (prefix, latent_dim) in zip(prefixes, latent_dims):
             # We don't update prefix lists, thus we must check if model still exists
             if not client.key_exists(prefix+"_loss"):

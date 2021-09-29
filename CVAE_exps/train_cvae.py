@@ -50,12 +50,13 @@ def save_model_to_db(client, model, prefix):
 
 if __name__ == '__main__': 
 
+    generation_id = 0
     while True:
         cvae = run_cvae(gpu_id, hyper_dim=hyper_dim, epochs=100)
         if cvae is None:
             time.sleep(15)
             continue
-        prefix = "_".join((str(int(time.time())), str(hyper_dim)))
+        prefix = "_".join((str(generation_id), str(hyper_dim)))
 
         # We don't need this, we only need the encoder
         # save_model_to_db(client, cvae, prefix)
@@ -77,4 +78,5 @@ if __name__ == '__main__':
             dataset.add_meta_scalar("latent_dims", int(hyper_dim))
             client.put_dataset(dataset)
 
+        generation_id += 1
         time.sleep(60)
