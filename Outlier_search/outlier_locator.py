@@ -21,8 +21,8 @@ base_eps = 0.2  # original: 0.2
 
 # Set to True to keep .dcd and .chk as real files
 # Set to False to store .dcd and .chk on DB (experimental)
-binary_files = False
 
+binary_files = bool(int(os.getenv("SS_BINARY_FILES", "1")))
 # Print info about used PDBs
 print_used_pdb_info = True
 

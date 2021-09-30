@@ -10,7 +10,8 @@ import MDAnalysis.coordinates as MDCoords
 
 from smartsim_utils import get_text_file, get_text_stream, put_strings_as_file, save_binary_file
 
-binary_files = False
+
+binary_files = bool(int(os.getenv("SS_BINARY_FILES", "1")))
 
 def find_frame(traj_dict, frame_number=0): 
     local_frame = frame_number

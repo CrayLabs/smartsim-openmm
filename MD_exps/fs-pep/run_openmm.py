@@ -30,7 +30,7 @@ else:
 
 iteration = 0
 
-binary_files = False
+binary_files = bool(int(os.getenv("SS_BINARY_FILES", "1")))
 
 while not stop:
     if not client.key_exists(input_dataset_key):

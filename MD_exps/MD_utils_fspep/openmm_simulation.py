@@ -12,8 +12,7 @@ from .openmm_reporter import (ContactMapReporter,
 from smartredis import Client
 from smartsim_utils import get_binary_stream, get_text_file, get_binary_file
 
-binary_files = False
-
+binary_files = bool(int(os.getenv("SS_BINARY_FILES", "1")))
 
 def openmm_simulate_amber_fs_pep(pdb_file, dcd_stream=None, chk_stream=None,
         top_file=None, check_point=None, GPU_index=0,
