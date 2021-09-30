@@ -75,7 +75,6 @@ class SmartSimContactMapReporter(object):
                                     [preproc_batch_key])
             
             # preproc is the concatenated version used by outlier search
-
             self._client.copy_tensor(preproc_batch_key, preproc_all_key)
         else:
             md_iter = len(self._dataset.get_meta_strings("timestamps"))
@@ -131,7 +130,8 @@ class SmartSimDCDReporter(object):
 
     To use it, create a DCDReporter, then add it to the Simulation's list of reporters.
 
-    This reporter is identical to 
+    This reporter is identical to openmm.app.DCDReporter, but allows to pass a byte
+    stream instead of a filename as ``file``.
     """
 
     def __init__(self, file, reportInterval, append=False, enforcePeriodicBox=None):
