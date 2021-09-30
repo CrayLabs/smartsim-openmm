@@ -67,10 +67,8 @@ class SmartSimContactMapReporter(object):
         batch_key = self._dataset_prefix+"batch"
         preproc_all_key = self._dataset_prefix+"preproc"
         if not self._append:
-            print("put tensor")
             preproc_batch_key = self._dataset_prefix+"preproc_0"
             self._client.put_tensor(batch_key, out)
-            print("run script")
             self._client.run_script("cvae_script",
                                     "cm_to_cvae",
                                     [batch_key],
@@ -132,6 +130,8 @@ class SmartSimDCDReporter(object):
     """SmartSimDCDReporter outputs a series of frames from a Simulation to a byte stream.
 
     To use it, create a DCDReporter, then add it to the Simulation's list of reporters.
+
+    This reporter is identical to 
     """
 
     def __init__(self, file, reportInterval, append=False, enforcePeriodicBox=None):
