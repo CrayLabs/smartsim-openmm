@@ -34,6 +34,7 @@ parser.add_argument("-r", "--ref", default=None, help="Input: Reference pdb for 
 parser.add_argument("--gpus_per_node", default=1, type=int)
 parser.add_argument("--len_initial", type=int, default=10)
 parser.add_argument("--len_iter", type=int, default=10)
+parser.add_argument("--exp_path", type=str, default=".")
 
 args = parser.parse_args()
 LEN_initial = args.len_initial
@@ -63,11 +64,12 @@ for key in incoming_entities:
 num_md_workers = len(md_workers)
 num_ml_workers = len(ml_workers)
 
+print(md_workers, ml_workers)
 
 client = Client(None, bool(int(os.getenv("SS_CLUSTER", False))))
 client.use_tensor_ensemble_prefix(False)
 
-exp_path = os.path.dirname(os.getcwd())
+exp_path = args.exp_path
 base_path = os.path.dirname(exp_path)
 
 md_updated = True
@@ -111,7 +113,7 @@ def update_MD_exe_args(md_workers, outlier_idx):
             exe_args = []
             md_iters[omm] += 1
             exe_args.extend(["--output_path",
-                            os.path.join(exp_path,"omm_out",f"omm_runs_{i:02d}_{md_iters[omm]:06d}"),
+                            os.path.join(exp_path,"omm_out",f"omm_runs_{i:02d}_{md_iters[omm]:06d}_{int(time.time())}"),
                             "-g", str(i%args.gpus_per_node)])
 
             # pick initial point of simulation 
@@ -148,8 +150,7 @@ def update_MD_exe_args(md_workers, outlier_idx):
                 input_dataset.add_meta_string("args", exe_arg)
             
             client.put_dataset(input_dataset)
-            if DEBUG:
-                print("Updated " + input_dataset_key, flush=True)
+            print("Updated " + input_dataset_key + "with " + " ".join(exe_args), flush=True)
 
 
 # Index of outlier in outliers_list
@@ -219,24 +220,27 @@ while True:
     for idx, md_worker in enumerate(md_workers):
         md_worker_prefix = "{"+md_worker+"}."
         latent_name = md_worker_prefix + "latent"
+        latent_mean_name = latent_name + "_mean"
+        latent_var_name = latent_name + "_var"
+        preproc_key = md_worker_prefix + "preproc"
         if client.tensor_exists(latent_name):
             client.delete_tensor(latent_name)
-            client.delete_tensor(latent_name+"_mean")
-            client.delete_tensor(latent_name+"_var")
-        if not client.tensor_exists(md_worker_prefix + "preproc"):
+            client.delete_tensor(latent_mean_name)
+            client.delete_tensor(latent_var_name)
+        if not client.tensor_exists(preproc_key):
             continue
-        client.run_model(best_prefix+"_encoder", [md_worker_prefix + "preproc"],
-                        [latent_name+"_mean", latent_name+"_var", latent_name])
-        loc_predict = client.get_tensor("{"+md_worker+"}.latent_mean")
+        client.run_model(best_prefix+"_encoder", [preproc_key],
+                        [latent_mean_name, latent_var_name, latent_name])
+        loc_predict = client.get_tensor(latent_mean_name)
         omm_dataset = client.get_dataset(md_worker)
         loc_lengths = omm_dataset.get_meta_scalars("cm_lengths").astype(np.int64)
         loc_paths = omm_dataset.get_meta_strings("paths")
-        # Consistency check
-        min_length = min(len(loc_lengths), len(loc_paths))
-        loc_lengths = loc_lengths[:min_length]
-        loc_paths = loc_paths[:min_length]
-        total_traj_length = np.sum(np.asarray(loc_lengths))
-        loc_predict = loc_predict[:total_traj_length,:]
+        # # Consistency check
+        # min_length = min(len(loc_lengths), len(loc_paths))
+        # loc_lengths = loc_lengths[:min_length]
+        # loc_paths = loc_paths[:min_length]
+        # total_traj_length = np.sum(np.asarray(loc_lengths))
+        # loc_predict = loc_predict[:total_traj_length,:]
         if idx == 0:
             train_data_length = loc_lengths
             cm_paths = loc_paths
@@ -351,7 +355,6 @@ while True:
         print ("PDB", restart_pdbs)
 
     # rank the restart_pdbs according to their RMSD to local state 
-
     if restart_pdbs:
         if ref_pdb_file: 
             restart_pdb_streams = [NamedStream(get_text_stream(filename, client), filename) for filename in restart_pdbs]

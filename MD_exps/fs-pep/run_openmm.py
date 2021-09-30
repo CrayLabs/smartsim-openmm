@@ -44,10 +44,10 @@ while not stop:
         input_args = input.get_meta_strings('args')
         if 'STOP' in input_args:
             stop = True
-            continue
+            break
         else:
             args = parser.parse_args(input_args)
-            print(args)
+            print(args, flush=True)
             if args.f: 
                 pdb_file = os.path.abspath(args.f) 
             else: 
@@ -85,7 +85,8 @@ while not stop:
                                                 output_path=output_path)
                 except (OSError, IOError):
                     print("Simulation raised OS or I/O error. This could happen if a file was moved.\n"
-                        "If this happens frequently, check the pipeline.")
+                          "If this happens frequently, check the pipeline.")
+                    continue
             else:
                 try:
                     openmm_simulate_amber_fs_pep(pdb_file,
@@ -99,7 +100,8 @@ while not stop:
                                                 output_path=output_path)
                 except (OSError, IOError):
                     print("Simulation raised OS or I/O error. This could happen if a file was moved.\n"
-                        "If this happens frequently, check the pipeline.")
+                          "If this happens frequently, check the pipeline.")
+                    continue
 
                 dcd_stream.seek(0)
                 chk_stream.seek(0)

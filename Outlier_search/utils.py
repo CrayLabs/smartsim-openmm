@@ -54,7 +54,6 @@ def write_pdb_frame_to_db(traj_file, pdb_file, frame_number, output_pdb, client)
     PDB = MDCoords.PDB.PDBWriter(output_stream, multiframe=True)
     PDB.write(mda_traj.atoms) 
     PDB.close()
-    del PDB
     output_stream.seek(0)
     try:
         put_strings_as_file(filename=output_pdb, strings=output_stream.readlines(), client=client)

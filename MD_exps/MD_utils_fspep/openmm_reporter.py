@@ -8,7 +8,6 @@ import h5py
 import os
 
 from openmm.app import DCDFile
-from openmm.unit import nanometer
 import io
 
 from MDAnalysis.analysis import distances
@@ -45,6 +44,27 @@ class ContactMapReporter(object):
         self._file.flush()
 
 class SmartSimContactMapReporter(object):
+    """The SmartSim contact map reporter will
+    store the contact maps internally (every report interval).
+    When the reporter is deleted (and thus the simulation is over),
+    contact maps are put on the database, preprocessed and 
+    the resulting samples (which can be used to train the CVAE)
+    are concatenated to the existing ones.
+    The concatenation is needed to maintain
+    the ordering, which is crucial for the Outlier Search stage
+
+    The argument `output_path` is used to track where files are written
+    by other reporters. It could indicate a real filesystem path,
+    or a virtual file, stored in the database, which can be written
+    to the given path. Together with a timestamp, the `output_path`
+    is stored at the end of the report.
+
+    The implementation is based on the original ContactMapReporter
+    as available in the DeepDriveMD legacy repository.
+
+    :param reportInterval: the report interval
+    :param output_path: destination path for other reporter files
+    """
     def __init__(self, reportInterval, output_path):
         self._reportInterval = reportInterval
         self._output_path = output_path
