@@ -184,7 +184,8 @@ class TrainingPipeline:
             ml_run_settings = SrunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
                                             '--dim', "SmartSim"],
                                             env_vars={"PYTHONPATH": python_path,
-                                            "SS_CLUSTER": str(int(self.cluster_db))})
+                                            "SS_CLUSTER": str(int(self.cluster_db)),
+                                            "SS_BINARY_FILES": BINARY_FILES})
             # Slurm env var workaround, this will soon not be neeeded anymore
             sskeyin = ":".join([entity.name for entity in self.md_stage])
             ml_run_settings.update_env({"SSKEYIN_SLURM": sskeyin})
@@ -291,7 +292,6 @@ class TrainingPipeline:
         self.exp.start(self.interfacing_stage, block=False)
 
         while True:
-            #self.update_MD_exe_args()
             # Here possibly plot info about simulation
             print("Simulation is running")
             time.sleep(120)

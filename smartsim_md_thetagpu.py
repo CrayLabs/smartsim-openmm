@@ -7,34 +7,33 @@ from smartsim.database import CobaltOrchestrator
 from smartredis import Client, Dataset
 from smartsim_utils import put_text_file
 
-# Assumptions:
-# - # of MD steps: 2
 
 TINY = True
-BATCH = True
 
-HOME = os.environ.get('HOME')
-conda_path = os.environ.get('CONDA_PREFIX')
-base_path = os.path.abspath(os.curdir)
-conda_sh = '/lus/scratch/arigazzi/anaconda3/etc/profile.d/conda.sh'
 INTERFACE="enp226s0"
+
+# Set to 1 if binary files should be always written to disk
+# Set to 0 if binary files should be cached into DB -- this is an experimental feature
+# and it is not guaranteed to work
+BINARY_FILES = "0"
 
 launcher='cobalt'
 
 base_dim = 3
 
-db_node_count = 3
 
 if TINY:
     LEN_initial = 3
     LEN_iter = 3
     md_counts = 2
     ml_counts = 2
+    db_node_count = 1
 else:
     LEN_initial = 10
     LEN_iter = 5  # this is mainly to test asynchronous behavior
     md_counts = 6
     ml_counts = 6
+    db_node_count = 3
 
 
 nodefile_name = os.getenv('COBALT_NODEFILE')
@@ -61,17 +60,12 @@ class TrainingPipeline:
         self.exp.generate(overwrite=True)
         self.cluster_db = db_node_count>1
         
-    def start_orchestrator(self, attach=False):
-        checkpoint = os.path.join(self.exp.exp_path, "database", "smartsim_db.dat")
-        if attach and os.path.exists(checkpoint):
-            print("Found orchestrator checkpoint, reconnecting")
-            self.orchestrator = self.exp.reconnect_orchestrator(checkpoint)
-        else:
-            self.orchestrator = CobaltOrchestrator(db_nodes=db_node_count, time="02:30:00", 
-                                                    interface=INTERFACE, batch=BATCH, run_command='mpirun',
-                                                    hosts=[host+'.mcp' for host in db_hosts])
-            self.exp.generate(self.orchestrator)
-            self.exp.start(self.orchestrator)
+    def start_orchestrator(self):
+        self.orchestrator = CobaltOrchestrator(db_nodes=db_node_count, time="02:30:00", 
+                                                interface=INTERFACE, batch=False, run_command='mpirun',
+                                                hosts=[host+'.mcp' for host in db_hosts])
+        self.exp.generate(self.orchestrator)
+        self.exp.start(self.orchestrator)
         self.client = Client(address=self.orchestrator.get_address()[0], cluster=self.cluster_db)
 
         return
@@ -81,16 +75,7 @@ class TrainingPipeline:
         """
         Function to generate MD stage. 
         """
-        
-        if BATCH:
-            md_batch_settings = CobaltBatchSettings(time="02:00:00")
-            md_batch_settings.set_nodes(md_counts)
-            md_batch_settings.set_tasks(md_counts)
-            md_batch_settings.set_queue("full-node")
-            md_batch_settings.set_hostlist(md_hosts)
-            md_batch_settings.add_preamble(f'. {conda_sh}')
-            md_batch_settings.add_preamble(f'conda activate {conda_path}')
-            md_batch_settings.add_preamble('module load cudatoolkit')
+    
 
         old_python_path = os.getenv("PYTHONPATH", "")
         python_path = f"{base_path}:{base_path}/MD_exps:{base_path}/MD_exps/MD_utils_fspep:" + old_python_path
@@ -100,25 +85,16 @@ class TrainingPipeline:
                                         exe_args=f"{base_path}/MD_exps/fs-pep/run_openmm.py",
                                         run_args=None,
                                         env_vars={"PYTHONPATH": python_path,
-                                        "SS_CLUSTER": str(int(self.cluster_db))})
+                                        "SS_CLUSTER": str(int(self.cluster_db)),
+                                        "SS_BINARY_FILES": BINARY_FILES})
         md_run_settings.set_tasks(1)
 
-        if BATCH:
-            md_ensemble = self.exp.create_ensemble("SmartSim-fs-pep", batch_settings=md_batch_settings)
-            for i in range(num_MD): 
-                # Add the MD task to the simulating stage
-                md_model = self.exp.create_model(f"openmm_{i}", run_settings=md_run_settings)
-                
-                md_model.enable_key_prefixing()
-                md_ensemble.add_model(md_model)
-            
-            self.exp.generate(md_ensemble, overwrite=True)
-        else:
-            md_ensemble = self.exp.create_ensemble("openmm", run_settings=md_run_settings, replicas=num_MD)
-            
-            md_ensemble.enable_key_prefixing()
-            self.exp.generate(md_ensemble, overwrite=True)
+
+        md_ensemble = self.exp.create_ensemble("openmm", run_settings=md_run_settings, replicas=num_MD)
         
+        md_ensemble.enable_key_prefixing()
+        self.exp.generate(md_ensemble, overwrite=True)
+    
         for i, md in enumerate(md_ensemble):
             md.run_settings.set_hostlist([md_hosts[i]])
 
@@ -158,47 +134,24 @@ class TrainingPipeline:
         Function to generate the learning stage
         """
 
-        if BATCH:
-            ml_batch_settings = CobaltBatchSettings(time="02:00:00")
-            ml_batch_settings.set_nodes(num_ML)
-            ml_batch_settings.set_tasks(num_ML)
-            ml_batch_settings.set_queue('full-node')
-            ml_batch_settings.set_hostlist(ml_hosts)
-            
-            ml_batch_settings.add_preamble([f'. {conda_sh}', 'module load cudatoolkit', f'conda activate {conda_path}' ])
 
         old_python_path = os.getenv("PYTHONPATH", "")
         python_path = f"{base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:" + old_python_path
-        if BATCH:
-            ml_ensemble = self.exp.create_ensemble("SmartSim-ML", batch_settings=ml_batch_settings)
-            # learn task
-            for i in range(num_ML): 
-                dim = i + base_dim
-                ml_run_settings = MpirunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
-                                                            '--dim', str(dim)],
-                                                            env_vars={"PYTHONPATH": python_path, 
-                                                            "SS_CLUSTER": str(int(self.cluster_db))})
-                ml_run_settings.set_tasks(1)
-                ml_model = self.exp.create_model(name=f"cvae_{i}", run_settings=ml_run_settings)
+       
+    
+        os.environ["PYTHONPATH"]=python_path
+        ml_run_settings = MpirunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
+                                        '--dim', "SmartSim"],
+                                        env_vars={"PYTHONPATH": python_path,
+                                        "SS_CLUSTER": str(int(self.cluster_db)),
+                                        "SS_BINARY_FILES": BINARY_FILES}) 
+        ml_run_settings.set_tasks(1)
 
-                ml_model.enable_key_prefixing()
-                for entity in self.md_stage:
-                    ml_model.register_incoming_entity(entity)
-                
-                ml_ensemble.add_model(ml_model)
-        else:
-            os.environ["PYTHONPATH"]=python_path
-            ml_run_settings = MpirunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
-                                            '--dim', "SmartSim"],
-                                            env_vars={"PYTHONPATH": python_path,
-                                            "SS_CLUSTER": str(int(self.cluster_db))}) 
-            ml_run_settings.set_tasks(1)
-
-            ml_ensemble = self.exp.create_ensemble("cvae", run_settings=ml_run_settings, replicas=num_ML)
-            for i in range(num_ML):
-                self.client.put_tensor(f"cvae_{i}_dim", np.asarray([base_dim+i]).astype(int))
-            for entity in self.md_stage:
-                ml_ensemble.register_incoming_entity(entity)
+        ml_ensemble = self.exp.create_ensemble("cvae", run_settings=ml_run_settings, replicas=num_ML)
+        for i in range(num_ML):
+            self.client.put_tensor(f"cvae_{i}_dim", np.asarray([base_dim+i]).astype(int))
+        for entity in self.md_stage:
+            ml_ensemble.register_incoming_entity(entity)
 
 
         self.exp.generate(ml_ensemble, overwrite=True)
@@ -224,41 +177,26 @@ class TrainingPipeline:
                                                     '--exp_path', self.exp.exp_path],
                                                     env_vars={"PYTHONPATH": python_path,
                                                               "SS_CLUSTER": str(int(self.cluster_db)),
-                                                              "PYTHONUNBUFFERED": "1"})
+                                                              "PYTHONUNBUFFERED": "1",
+                                                              "SS_BINARY_FILES": BINARY_FILES})
         interfacing_run_settings.set_tasks(1)
         interfacing_run_settings.set_hostlist(hosts[-1])
 
         interfacing_run_settings.update_env({"PYTHONUNBUFFERED": "1"})
 
-        if BATCH:
-            interfacing_batch_settings = CobaltBatchSettings(time="02:00:00")
-            interfacing_batch_settings.set_queue("full-node")
-            interfacing_batch_settings.set_nodes(1)
-            interfacing_batch_settings.set_tasks(1)
-            interfacing_batch_settings.set_hostlist(hosts[-1])
-            interfacing_batch_settings.add_preamble([f'. {conda_sh}',
-                                                    'module load cudatoolkit',
-                                                    f'conda activate {conda_path}'])
-            # Scanning for outliers and prepare the next stage of MDs 
-            interfacing_ensemble = self.exp.create_ensemble('SmartSim-Outlier_search', batch_settings=interfacing_batch_settings)
+       
 
         interfacing_model = self.exp.create_model('SmartSim-Outlier_search', run_settings=interfacing_run_settings)
         interfacing_model.attach_generator_files(to_copy = [os.path.join(base_path, "Outlier_search", "outlier_locator.py"),
                                                             os.path.join(base_path, "Outlier_search", "utils.py"),
                                                             os.path.join(base_path,'smartsim_utils.py')])
 
-        if BATCH:
-            interfacing_ensemble.add_model(interfacing_model)
-            self.exp.generate(interfacing_ensemble, overwrite=True)
-        else:
-            self.exp.generate(interfacing_model, overwrite=True)
+        self.exp.generate(interfacing_model, overwrite=True)
 
         [interfacing_model.register_incoming_entity(entity) for entity in self.ml_stage]
         [interfacing_model.register_incoming_entity(entity) for entity in self.md_stage]
-        if BATCH:
-            return interfacing_ensemble
-        else:
-            return interfacing_model
+
+        return interfacing_model
 
 
     def run_pipeline(self):
@@ -288,7 +226,6 @@ class TrainingPipeline:
         self.exp.start(self.interfacing_stage, block=False)
 
         while True:
-            #self.update_MD_exe_args()
             # Here possibly plot info about simulation
             print("Simulation is running")
             time.sleep(120)
