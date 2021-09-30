@@ -44,12 +44,15 @@ pdb_file = os.path.abspath(args.pdb)
 ref_pdb_file = os.path.abspath(args.ref)
 
 # Separate incoming ml from md workers
-incoming_entities = os.getenv("SSKEYIN")
+if "SSKEYIN_SLURM" in os.environ:
+    incoming_entities = os.getenv("SSKEYIN_SLURM").split(":")
+else:
+    incoming_entities = os.getenv("SSKEYIN").split(",")
 md_workers = []
 ml_workers = []
 md_timestamps = {}
 md_iters = {}
-for key in incoming_entities.split(","):
+for key in incoming_entities:
     if key.startswith("openmm"):
         md_workers.append(key)
         md_timestamps[key] = 0.0

@@ -32,7 +32,14 @@ def run_cvae(gpu_id, hyper_dim=3, epochs=10):
     client = Client(None, bool(int(os.getenv("SS_CLUSTER", False))))
     client.use_tensor_ensemble_prefix(False)
     batches = None
-    for prefix in os.getenv("SSKEYIN").split(","):
+    print("Starting cvae training.")
+
+    if "SSKEYIN_SLURM" in os.environ:
+        prefixes = os.getenv("SSKEYIN_SLURM").split(":")
+    else:
+        prefixes = os.getenv("SSKEYIN").split(",")
+
+    for prefix in prefixes:
         key = "{" + prefix + "}.preproc"
         attempts = 5
         while attempts > 0:
@@ -45,13 +52,14 @@ def run_cvae(gpu_id, hyper_dim=3, epochs=10):
                         batches = np.concatenate((batches, new_batch), axis=0)
                     break
                 except RedisReplyError:
+                    time.sleep(5)
                     attempts -= 1
                     
             else:
                 attempts -= 1
                 
             if attempts == 0:
-                print(f"{key} is not available, proceeding without it")
+                print(f"{key} is not available, proceeding without it", flush=True)
 
     if batches is None:
         return None

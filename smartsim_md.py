@@ -11,16 +11,16 @@ from smartsim_utils import put_text_file
 # - # of MD steps: 2
 
 gpus_per_node = 1  # 6 on Summit, 1 on Horizon
-TINY = True
+TINY = False
 BATCH = False
 
 HOME = os.environ.get('HOME')
 conda_path = os.environ.get('CONDA_PREFIX')
 base_path = os.path.abspath(os.curdir)
 conda_sh = '/lus/scratch/arigazzi/anaconda3/etc/profile.d/conda.sh'
-INTERFACE="enp226s0"
+INTERFACE="ipogif0"  # "enp226s0"
 
-launcher='cobalt'
+launcher='slurm'
 
 base_dim = 3
 
@@ -146,6 +146,11 @@ class TrainingPipeline:
             for i, md in enumerate(md_ensemble):
                 md.run_settings.set_hostlist([md_hosts[i]])
 
+
+        self.client.set_script_from_file("cvae_script",
+                                        f"{base_path}/MD_to_CVAE/MD_to_CVAE_scripts.py",
+                                        device="CPU")
+
         return md_ensemble
 
 
@@ -220,7 +225,11 @@ class TrainingPipeline:
             if launcher=='slurm':
                 ml_run_settings = SrunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
                                                 '--dim', "SmartSim"],
-                                                env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))})
+                                                env_vars={"PYTHONPATH": python_path,
+                                                "SS_CLUSTER": str(int(self.cluster_db))})
+                # Slurm env var workaround, this will soon not be neeeded anymore
+                sskeyin = ":".join([entity.name for entity in self.md_stage])
+                ml_run_settings.update_env({"SSKEYIN_SLURM": sskeyin})
                 ml_run_settings.set_tasks_per_node(1)
                 ml_run_settings.set_tasks(1)
                 ml_run_settings.set_nodes(1)
@@ -261,6 +270,10 @@ class TrainingPipeline:
             interfacing_run_settings.set_nodes(1)
             interfacing_run_settings.set_tasks_per_node(1)
             interfacing_run_settings.set_tasks(1)
+
+            # Slurm env var workaround, this will soon not be needed anymore
+            sskeyin = ":".join([entity.name for entity in self.md_stage]+[entity.name for entity in self.ml_stage])
+            interfacing_run_settings.update_env({"SSKEYIN_SLURM": sskeyin})
         elif launcher=='cobalt':
             interfacing_run_settings = MpirunSettings('python', 
                                                         exe_args=['outlier_locator.py',

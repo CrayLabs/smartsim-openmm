@@ -66,7 +66,7 @@ while not stop:
             gpu_index = args.gpu
             
             output_path = args.output_path
-            os.makedirs(output_path)
+            os.makedirs(output_path, exist_ok=True)
 
             dcd_stream = io.BytesIO()
             chk_stream = io.BytesIO()
