@@ -81,3 +81,7 @@ conda activate <your env>
 
 python smartsim_md.py
 ```
+
+## Implementation details
+
+The binary file storage in the database is an actively developed feature, and thus it has not yet been thoroughly tested or optimized. It is included in this project as a proof of concept and should not be considered ready for production. For this reason, the user can set the variable BINARY_FILES to 1 in the driver scripts, to write all binary files to disk instead of storing them on the DB.
