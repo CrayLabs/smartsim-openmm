@@ -62,7 +62,7 @@ class SmartSimContactMapReporter(object):
         self._timestamp = str(time.time())
         if not self._client.model_exists("cvae_script"):
             self._client.set_script_from_file("cvae_script",
-                "/lus/scratch/arigazzi/smartsim-dev/smartsim-openmm/MD_to_CVAE/MD_to_CVAE_scripts.py",
+                "/lus/theta-fs0/projects/datascience/arigazzi/smartsim-dev/smartsim-openmm/MD_to_CVAE/MD_to_CVAE_scripts.py",
                 device="CPU")
 
     def __del__(self):

@@ -49,7 +49,7 @@ md_workers = []
 ml_workers = []
 md_timestamps = {}
 md_iters = {}
-for key in incoming_entities.split(":"):
+for key in incoming_entities.split(","):
     if key.startswith("openmm"):
         md_workers.append(key)
         md_timestamps[key] = 0.0

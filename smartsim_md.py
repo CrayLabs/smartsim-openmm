@@ -1,8 +1,8 @@
 import os, time 
 import numpy as np
 from smartsim import Experiment
-from smartsim.settings import SrunSettings, SbatchSettings
-from smartsim.database import SlurmOrchestrator
+from smartsim.settings import SrunSettings, SbatchSettings, MpirunSettings, CobaltBatchSettings
+from smartsim.database import SlurmOrchestrator, CobaltOrchestrator
 
 from smartredis import Client, Dataset
 from smartsim_utils import put_text_file
@@ -11,16 +11,21 @@ from smartsim_utils import put_text_file
 # - # of MD steps: 2
 
 gpus_per_node = 1  # 6 on Summit, 1 on Horizon
-TINY = False
+TINY = True
 BATCH = False
 
 HOME = os.environ.get('HOME')
 conda_path = os.environ.get('CONDA_PREFIX')
 base_path = os.path.abspath(os.curdir)
 conda_sh = '/lus/scratch/arigazzi/anaconda3/etc/profile.d/conda.sh'
-INTERFACE="ipogif0"
+INTERFACE="enp226s0"
+
+launcher='cobalt'
 
 base_dim = 3
+
+db_node_count = 1
+
 
 if TINY:
     LEN_initial = 3
@@ -35,16 +40,31 @@ else:
 
 node_counts = md_counts // gpus_per_node
 
+
+if launcher=='cobalt':
+    nodefile_name = os.getenv('COBALT_NODEFILE')
+    with open(nodefile_name, 'r') as nodefile:
+        hosts = [node.strip("\n") for node in nodefile.readlines()]
+    
+    base_host = 0
+    db_hosts = hosts[base_host:db_node_count]
+    base_host += db_node_count
+    md_hosts = hosts[base_host:base_host+node_counts]
+    base_host += node_counts
+    ml_hosts = hosts[base_host:base_host+ml_counts]
+    base_host += ml_counts
+    outlier_hosts = hosts[-1]
+
+
 print("-"*49)
 print(" "*21 + "WELCOME")
 print("-"*49 + "\n")
 
 class TrainingPipeline:
     def __init__(self):
-        self.exp = Experiment(name="SmartSim-DDMD", launcher="slurm")
+        self.exp = Experiment(name="SmartSim-DDMD", launcher=launcher)
         self.exp.generate(overwrite=True)
-        self.cluster_db = True
-        self.used_outliers = []
+        self.cluster_db = db_node_count>1
         
     def start_orchestrator(self, attach=False):
         checkpoint = os.path.join(self.exp.exp_path, "database", "smartsim_db.dat")
@@ -52,7 +72,11 @@ class TrainingPipeline:
             print("Found orchestrator checkpoint, reconnecting")
             self.orchestrator = self.exp.reconnect_orchestrator(checkpoint)
         else:
-            self.orchestrator = SlurmOrchestrator(db_nodes=3 if self.cluster_db else 1, time="02:30:00", interface=INTERFACE, batch=BATCH)
+            if launcher=='slurm':
+                self.orchestrator = SlurmOrchestrator(db_nodes=db_node_count, time="02:30:00", interface=INTERFACE, batch=BATCH)
+            elif launcher=='cobalt':
+                self.orchestrator = CobaltOrchestrator(db_nodes=db_node_count, time="02:30:00", 
+                                                       interface=INTERFACE, batch=BATCH, run_command='mpirun', hosts=[host+'.mcp' for host in db_hosts])
             self.exp.generate(self.orchestrator)
             self.exp.start(self.orchestrator)
         self.client = Client(address=self.orchestrator.get_address()[0], cluster=self.cluster_db)
@@ -66,28 +90,44 @@ class TrainingPipeline:
         """
         
         if BATCH:
-            md_batch_args = {"nodes": node_counts, "ntasks-per-node": 1, "constraint": "P100", "exclusive": None}
-            md_batch_settings = SbatchSettings(time="02:00:00", batch_args=md_batch_args)
-            # md_batch_settings.set_partition("spider")
+            if launcher=='slurm':
+                md_batch_args = {"nodes": node_counts, "ntasks-per-node": 1, "constraint": "P100", "exclusive": None}
+                md_batch_settings = SbatchSettings(time="02:00:00", batch_args=md_batch_args)
+                # md_batch_settings.set_partition("spider")
+            elif launcher=='cobalt':
+                md_batch_settings = CobaltBatchSettings(time="02:00:00")
+                md_batch_settings.set_nodes(node_counts)
+                md_batch_settings.set_tasks(node_counts)
+                md_batch_settings.set_queue("full-node")
+                md_batch_settings.set_hostlist(md_hosts)
             md_batch_settings.add_preamble(f'. {conda_sh}')
             md_batch_settings.add_preamble(f'conda activate {conda_path}')
             md_batch_settings.add_preamble('module load cudatoolkit')
         python_path = os.getenv("PYTHONPATH", "")
         python_path = f"{base_path}:{base_path}/MD_exps:{base_path}/MD_exps/MD_utils_fspep:" + python_path
-        
+        os.environ["PYTHONPATH"]=python_path
+
         os.makedirs(os.path.join(self.exp.exp_path,"omm_out"), exist_ok=True)
-        md_run_settings = SrunSettings(exe="python",
-                                        exe_args=f"{base_path}/MD_exps/fs-pep/run_openmm.py",
-                                        run_args={"exclusive": None},
-                                        env_vars={"PYTHONPATH": python_path,
-                                        "SS_CLUSTER": str(int(self.cluster_db))})
-        md_run_settings.set_nodes(1)
-        md_run_settings.set_tasks(1)
-        md_run_settings.set_tasks_per_node(1)
+        if launcher=='slurm':
+            md_run_settings = SrunSettings(exe="python",
+                                            exe_args=f"{base_path}/MD_exps/fs-pep/run_openmm.py",
+                                            run_args={"exclusive": None},
+                                            env_vars={"PYTHONPATH": python_path,
+                                            "SS_CLUSTER": str(int(self.cluster_db))})
+            md_run_settings.set_nodes(1)
+            md_run_settings.set_tasks(1)
+            md_run_settings.set_tasks_per_node(1)
+        elif launcher=='cobalt':
+            md_run_settings = MpirunSettings(exe="python",
+                                            exe_args=f"{base_path}/MD_exps/fs-pep/run_openmm.py",
+                                            run_args=None,
+                                            env_vars={"PYTHONPATH": python_path,
+                                            "SS_CLUSTER": str(int(self.cluster_db))})
+            md_run_settings.set_tasks(1)
+            #md_run_settings.set_tasks_per_node(1)
 
         if BATCH:
             md_ensemble = self.exp.create_ensemble("SmartSim-fs-pep", batch_settings=md_batch_settings)
-            # self.exp.generate(md_ensemble)
             for i in range(num_MD): 
                 # Add the MD task to the simulating stage
                 md_model = self.exp.create_model(f"openmm_{i}", run_settings=md_run_settings)
@@ -102,6 +142,10 @@ class TrainingPipeline:
             md_ensemble.enable_key_prefixing()
             self.exp.generate(md_ensemble, overwrite=True)
         
+        if launcher=='cobalt':
+            for i, md in enumerate(md_ensemble):
+                md.run_settings.set_hostlist([md_hosts[i]])
+
         return md_ensemble
 
 
@@ -134,8 +178,16 @@ class TrainingPipeline:
         """
 
         if BATCH:
-            ml_batch_settings = SbatchSettings(time="02:00:00", batch_args={"nodes": num_ML, "ntasks-per-node": 1, "constraint": "P100"})
-            # ml_batch_settings.set_partition("spider")
+            if launcher=='slurm':
+                ml_batch_settings = SbatchSettings(time="02:00:00", batch_args={"nodes": num_ML, "ntasks-per-node": 1, "constraint": "P100"})
+                # ml_batch_settings.set_partition("spider")
+            elif launcher=='cobalt':
+                ml_batch_settings = CobaltBatchSettings(time="02:00:00")
+                ml_batch_settings.set_nodes(num_ML)
+                ml_batch_settings.set_tasks(num_ML)
+                ml_batch_settings.set_queue('full-node')
+                ml_batch_settings.set_hostlist(ml_hosts)
+                
             ml_batch_settings.add_preamble([f'. {conda_sh}', 'module load cudatoolkit', f'conda activate {conda_path}' ])
         python_path = os.getenv("PYTHONPATH", "")
         python_path = f"{base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:" + python_path
@@ -144,12 +196,19 @@ class TrainingPipeline:
             # learn task
             for i in range(num_ML): 
                 dim = i + base_dim
-                ml_run_settings = SrunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
-                        '--dim', str(dim)],
-                        env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))})
-                ml_run_settings.set_tasks_per_node(1)
-                ml_run_settings.set_tasks(1)
-                ml_run_settings.set_nodes(1)
+                
+                if launcher=='slurm':
+                    ml_run_settings = SrunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
+                            '--dim', str(dim)],
+                            env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))})
+                    ml_run_settings.set_tasks_per_node(1)
+                    ml_run_settings.set_tasks(1)
+                    ml_run_settings.set_nodes(1)
+                elif launcher=='cobalt':
+                    ml_run_settings = MpirunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
+                            '--dim', str(dim)],
+                            env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))})
+                    ml_run_settings.set_tasks(1)
                 ml_model = self.exp.create_model(name=f"cvae_{i}", run_settings=ml_run_settings)
 
                 ml_model.enable_key_prefixing()
@@ -158,20 +217,31 @@ class TrainingPipeline:
                 
                 ml_ensemble.add_model(ml_model)
         else:
-            ml_run_settings = SrunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
-                                            '--dim', "SmartSim"],
-                                            env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))})
-            ml_run_settings.set_tasks_per_node(1)
-            ml_run_settings.set_tasks(1)
-            ml_run_settings.set_nodes(1)
+            if launcher=='slurm':
+                ml_run_settings = SrunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
+                                                '--dim', "SmartSim"],
+                                                env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))})
+                ml_run_settings.set_tasks_per_node(1)
+                ml_run_settings.set_tasks(1)
+                ml_run_settings.set_nodes(1)
+            elif launcher=='cobalt':
+                os.environ["PYTHONPATH"]=python_path
+                ml_run_settings = MpirunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
+                                                '--dim', "SmartSim"],
+                                                env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))}) 
+                ml_run_settings.set_tasks(1)
+
             ml_ensemble = self.exp.create_ensemble("cvae", run_settings=ml_run_settings, replicas=num_ML)
             for i in range(num_ML):
                 self.client.put_tensor(f"cvae_{i}_dim", np.asarray([base_dim+i]).astype(int))
             for entity in self.md_stage:
-                    ml_ensemble.register_incoming_entity(entity)
+                ml_ensemble.register_incoming_entity(entity)
 
 
         self.exp.generate(ml_ensemble, overwrite=True)
+        if launcher=='cobalt':
+            for i, ml in enumerate(ml_ensemble):
+                ml.run_settings.set_hostlist(ml_hosts[i])
         return ml_ensemble 
 
 
@@ -179,25 +249,45 @@ class TrainingPipeline:
         
         python_path = os.getenv("PYTHONPATH", "")
         python_path = f"{base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:" + python_path
-        interfacing_run_settings = SrunSettings('python', 
-                                                exe_args=['outlier_locator.py',
-                                                '--md', os.path.join(self.exp.exp_path, 'omm_out'), 
-                                                '--pdb', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb', 
-                                                '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb',
-                                                '--len_initial', str(LEN_initial),
-                                                '--len_iter', str(LEN_iter)],
-                                                env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))})
-        interfacing_run_settings.set_nodes(1)
-        interfacing_run_settings.set_tasks_per_node(1)
-        interfacing_run_settings.set_tasks(1)
+        if launcher=='slurm':
+            interfacing_run_settings = SrunSettings('python', 
+                                                    exe_args=['outlier_locator.py',
+                                                    '--md', os.path.join(self.exp.exp_path, 'omm_out'), 
+                                                    '--pdb', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb', 
+                                                    '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb',
+                                                    '--len_initial', str(LEN_initial),
+                                                    '--len_iter', str(LEN_iter)],
+                                                    env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))})
+            interfacing_run_settings.set_nodes(1)
+            interfacing_run_settings.set_tasks_per_node(1)
+            interfacing_run_settings.set_tasks(1)
+        elif launcher=='cobalt':
+            interfacing_run_settings = MpirunSettings('python', 
+                                                        exe_args=['outlier_locator.py',
+                                                        '--md', os.path.join(self.exp.exp_path, 'omm_out'), 
+                                                        '--pdb', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb', 
+                                                        '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb',
+                                                        '--len_initial', str(LEN_initial),
+                                                        '--len_iter', str(LEN_iter)],
+                                                        env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))})
+            interfacing_run_settings.set_tasks(1)
+            interfacing_run_settings.set_hostlist(hosts[-1])
+
         if BATCH:
-            interfacing_batch_settings = SbatchSettings(time="02:00:00",
-                                                        batch_args = {"nodes": 1, "ntasks-per-node": 1})
+            if launcher=='slurm':
+                interfacing_batch_settings = SbatchSettings(time="02:00:00",
+                                                            batch_args = {"nodes": 1, "ntasks-per-node": 1})
+            # interfacing_batch_settings.set_partition("spider")
+            elif launcher=='cobalt':
+                interfacing_batch_settings = CobaltBatchSettings(time="02:00:00")
+                interfacing_batch_settings.set_queue("full-node")
+                interfacing_batch_settings.set_nodes(1)
+                interfacing_batch_settings.set_tasks(1)
+                interfacing_batch_settings.set_hostlist(hosts[-1])
             interfacing_batch_settings.add_preamble([f'. {conda_sh}',
                                                     'module load cudatoolkit',
                                                     f'conda activate {conda_path}',
                                                     ])
-            # interfacing_batch_settings.set_partition("spider")
         # Scanning for outliers and prepare the next stage of MDs 
         if BATCH:
             interfacing_ensemble = self.exp.create_ensemble('SmartSim-Outlier_search', batch_settings=interfacing_batch_settings)

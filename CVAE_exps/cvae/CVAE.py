@@ -32,7 +32,7 @@ def run_cvae(gpu_id, hyper_dim=3, epochs=10):
     client = Client(None, bool(int(os.getenv("SS_CLUSTER", False))))
     client.use_tensor_ensemble_prefix(False)
     batches = None
-    for prefix in os.getenv("SSKEYIN").split(":"):
+    for prefix in os.getenv("SSKEYIN").split(","):
         key = "{" + prefix + "}.preproc"
         attempts = 5
         while attempts > 0:

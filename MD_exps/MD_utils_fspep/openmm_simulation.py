@@ -210,9 +210,10 @@ def openmm_simulate_amber_fs_pep(pdb_file, dcd_stream=None, chk_stream=None,
     if top_file:
         try:
             pdb_strings = get_text_file(pdb_file, client)
-        except IOError:
+        except IOError as e:
             print(f"Warning, file {pdb_file} was not found in Database. Proceeding to next candidate.")
-            return
+            print(e.strerror)
+            raise e
         pdb = pmd.read_PDB(top_file, xyz = pdb_strings)
         system = pdb.createSystem(nonbondedMethod=app.CutoffNonPeriodic, 
                 nonbondedCutoff=1.0*u.nanometer, constraints=app.HBonds, 
@@ -220,9 +221,10 @@ def openmm_simulate_amber_fs_pep(pdb_file, dcd_stream=None, chk_stream=None,
     else: 
         try:
             pdb_strings = get_text_file(pdb_file, client)
-        except IOError:
+        except IOError as e:
             print(f"Warning, file {pdb_file} was not found in Database. Proceeding to next candidate.")
-            return
+            print(e.strerror)
+            raise e
         pdb = pmd.read_PDB(pdb_strings)
         forcefield = app.ForceField('amber99sbildn.xml', 'amber99_obc.xml')
         system = forcefield.createSystem(pdb.topology, nonbondedMethod=app.CutoffNonPeriodic, 
