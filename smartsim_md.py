@@ -11,7 +11,7 @@ from smartsim_utils import put_text_file
 # - # of MD steps: 2
 
 gpus_per_node = 1  # 6 on Summit, 1 on Horizon
-TINY = False
+TINY = True
 BATCH = False
 
 HOME = os.environ.get('HOME')
@@ -149,7 +149,7 @@ class TrainingPipeline:
 
         self.client.set_script_from_file("cvae_script",
                                         f"{base_path}/MD_to_CVAE/MD_to_CVAE_scripts.py",
-                                        device="CPU")
+                                        device="GPU")
 
         return md_ensemble
 
@@ -266,7 +266,9 @@ class TrainingPipeline:
                                                     '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb',
                                                     '--len_initial', str(LEN_initial),
                                                     '--len_iter', str(LEN_iter)],
-                                                    env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))})
+                                                    env_vars={"PYTHONPATH": python_path, 
+                                                              "SS_CLUSTER": str(int(self.cluster_db)),
+                                                              "PYTHONUNBUFFERED": "1"})
             interfacing_run_settings.set_nodes(1)
             interfacing_run_settings.set_tasks_per_node(1)
             interfacing_run_settings.set_tasks(1)
@@ -282,9 +284,13 @@ class TrainingPipeline:
                                                         '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb',
                                                         '--len_initial', str(LEN_initial),
                                                         '--len_iter', str(LEN_iter)],
-                                                        env_vars={"PYTHONPATH": python_path, "SS_CLUSTER": str(int(self.cluster_db))})
+                                                        env_vars={"PYTHONPATH": python_path,
+                                                                  "SS_CLUSTER": str(int(self.cluster_db)),
+                                                                  "PYTHONUNBUFFERED": "1"})
             interfacing_run_settings.set_tasks(1)
             interfacing_run_settings.set_hostlist(hosts[-1])
+
+        interfacing_run_settings.update_env({"PYTHONUNBUFFERED": "1"})
 
         if BATCH:
             if launcher=='slurm':
@@ -314,7 +320,7 @@ class TrainingPipeline:
             interfacing_ensemble.add_model(interfacing_model)
             self.exp.generate(interfacing_ensemble, overwrite=True)
         else:
-            self.exp.generate(interfacing_model)
+            self.exp.generate(interfacing_model, overwrite=True)
 
         [interfacing_model.register_incoming_entity(entity) for entity in self.ml_stage]
         [interfacing_model.register_incoming_entity(entity) for entity in self.md_stage]

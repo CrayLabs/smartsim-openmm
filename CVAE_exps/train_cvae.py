@@ -25,7 +25,8 @@ client.use_tensor_ensemble_prefix(False)
 if args.dim == 'SmartSim':
     hyper_dim = client.get_tensor(os.getenv("SSKEYOUT")+"_dim").astype(int)[0]
 else:
-    hyper_dim = int(args.dim) 
+    hyper_dim = int(args.dim)
+
 gpu_id = args.gpu
 
 
@@ -48,11 +49,58 @@ def save_model_to_db(client, model, prefix):
                     backend="TF", device="GPU", inputs=input_names, outputs=output_names)
 
 
+
+
 if __name__ == '__main__': 
 
     generation_id = 0
+
+    if "SSKEYIN_SLURM" in os.environ:
+        prefixes = os.getenv("SSKEYIN_SLURM").split(":")
+    else:
+        prefixes = os.getenv("SSKEYIN").split(",")
+
+    next_batch = {}
+    for prefix in prefixes:
+        next_batch[prefix] = 0
+
+    batches = None
+
     while True:
-        cvae = run_cvae(gpu_id, hyper_dim=hyper_dim, epochs=100)
+
+        # Acquire new batches -- assumption: order does not matter
+        # for training, thus we can simply get the new ones and append
+        # them to the previous ones
+        for prefix in prefixes:
+            key = "{" + prefix + "}.preproc_" + str(next_batch[prefix])
+            print(key)
+            attempts = 5
+            while client.key_exists(key) and attempts>0:    
+                try:
+                    if batches is None:
+                        batches = client.get_tensor(key)
+                    else:
+                        new_batch = client.get_tensor(key)
+                        batches = np.concatenate((batches, new_batch), axis=0)
+                    
+                    # If batch exists, go to next one
+                    next_batch[prefix] += 1
+                    key = "{" + prefix + "}.preproc_" + str(next_batch[prefix])
+                    attempts = 5
+                    break
+
+                except RedisReplyError:
+                    time.sleep(5)
+                    attempts -= 1            
+                    if attempts == 0:
+                        print(f"{key} exists but can not be accessed, proceeding without it", flush=True)                    
+                
+
+        if batches is None:
+            time.sleep(15)
+            continue
+
+        cvae = run_cvae(gpu_id, hyper_dim=hyper_dim, epochs=100, cm_data_input = batches)
         if cvae is None:
             time.sleep(15)
             continue
@@ -69,14 +117,11 @@ if __name__ == '__main__':
         print(f"Writing to {dataset_name}")
         if client.key_exists(dataset_name):
             dataset = client.get_dataset(dataset_name)
-            dataset.add_meta_string("prefixes", prefix)
-            dataset.add_meta_scalar("latent_dims", np.asarray(hyper_dim))
-            client.put_dataset(dataset)
         else:
             dataset = Dataset(dataset_name)
-            dataset.add_meta_string("prefixes", prefix)
-            dataset.add_meta_scalar("latent_dims", int(hyper_dim))
-            client.put_dataset(dataset)
+        dataset.add_meta_string("prefixes", prefix)
+        dataset.add_meta_scalar("latent_dims", int(hyper_dim))
+        client.put_dataset(dataset)
 
         generation_id += 1
         time.sleep(60)

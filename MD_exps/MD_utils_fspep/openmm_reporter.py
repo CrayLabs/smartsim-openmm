@@ -64,21 +64,42 @@ class SmartSimContactMapReporter(object):
     def __del__(self):
         out = np.transpose(self._out).copy().astype(np.float32)
         traj_length = int(out.shape[1])
+        batch_key = self._dataset_prefix+"batch"
+        preproc_all_key = self._dataset_prefix+"preproc"
         if not self._append:
-            self._client.put_tensor(self._dataset_prefix+"batch", out)
-            self._dataset.add_meta_scalar("cm_lengths", traj_length)
+            print("put tensor")
+            preproc_batch_key = self._dataset_prefix+"preproc_0"
+            self._client.put_tensor(batch_key, out)
+            print("run script")
             self._client.run_script("cvae_script",
                                     "cm_to_cvae",
-                                    [self._dataset_prefix+"batch"],
-                                    [self._dataset_prefix+"preproc"])
+                                    [batch_key],
+                                    [preproc_batch_key])
+            
+            # preproc is the concatenated version used by outlier search
+
+            self._client.copy_tensor(preproc_batch_key, preproc_all_key)
         else:
-            self._client.delete_tensor(self._dataset_prefix+"batch")
-            self._client.put_tensor(self._dataset_prefix+"batch", out)
+            md_iter = len(self._dataset.get_meta_strings("timestamps"))
+            preproc_batch_key = self._dataset_prefix+f"preproc_{md_iter}"
+            intermediate_key = self._dataset_prefix+"interm"
+            self._client.delete_tensor(batch_key)
+            self._client.put_tensor(batch_key, out)
+
             self._client.run_script("cvae_script",
-                                    "cm_to_existing_cvae",
-                                    [self._dataset_prefix+"batch", self._dataset_prefix+"preproc"],
-                                    [self._dataset_prefix+"preproc"])
-            self._dataset.add_meta_scalar("cm_lengths", np.asarray(traj_length))
+                                    "cm_to_cvae",
+                                    [batch_key],
+                                    [preproc_batch_key])
+
+            # preproc is the concatenated version used by outlier search                      
+            self._client.run_script("cvae_script",
+                                    "concatenate",
+                                    [preproc_all_key, preproc_batch_key],
+                                    [intermediate_key])
+            self._client.delete_tensor(preproc_all_key)
+            self._client.rename_tensor(intermediate_key, preproc_all_key)
+
+        self._dataset.add_meta_scalar("cm_lengths", traj_length)
 
         print(f"Destroying reporter, final size of contact map: {out.shape}")
     

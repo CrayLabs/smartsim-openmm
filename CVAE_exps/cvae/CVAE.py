@@ -27,44 +27,12 @@ def CVAE(input_shape, latent_dim=3):
 
     return autoencoder
 
-def run_cvae(gpu_id, hyper_dim=3, epochs=10): 
+def run_cvae(gpu_id, hyper_dim=3, epochs=10, cm_data_input=None): 
     
     client = Client(None, bool(int(os.getenv("SS_CLUSTER", False))))
     client.use_tensor_ensemble_prefix(False)
     batches = None
     print("Starting cvae training.")
-
-    if "SSKEYIN_SLURM" in os.environ:
-        prefixes = os.getenv("SSKEYIN_SLURM").split(":")
-    else:
-        prefixes = os.getenv("SSKEYIN").split(",")
-
-    for prefix in prefixes:
-        key = "{" + prefix + "}.preproc"
-        attempts = 5
-        while attempts > 0:
-            if client.key_exists(key):
-                try:
-                    if batches is None:
-                        batches = client.get_tensor(key)
-                    else:
-                        new_batch = client.get_tensor(key)
-                        batches = np.concatenate((batches, new_batch), axis=0)
-                    break
-                except RedisReplyError:
-                    time.sleep(5)
-                    attempts -= 1
-                    
-            else:
-                attempts -= 1
-                
-            if attempts == 0:
-                print(f"{key} is not available, proceeding without it", flush=True)
-
-    if batches is None:
-        return None
-
-    cm_data_input = batches
 
     print("Train dataset size: ", cm_data_input.shape)
 

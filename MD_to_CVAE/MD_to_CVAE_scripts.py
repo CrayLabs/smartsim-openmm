@@ -40,3 +40,9 @@ def cm_to_existing_cvae(batch, preproc):
     concatenated = torch.cat((preproc, cvae), 0)
 
     return concatenated
+
+def concatenate(tensor1, tensor2):
+
+    concatenated = torch.cat((tensor1, tensor2), 0)
+
+    return concatenated
