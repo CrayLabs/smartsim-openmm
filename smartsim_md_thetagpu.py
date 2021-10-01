@@ -9,6 +9,8 @@ from smartsim_utils import put_text_file
 
 
 TINY = True
+base_path = os.path.abspath(os.curdir)
+gpus_per_node = 1 
 
 INTERFACE="enp226s0"
 
@@ -101,7 +103,7 @@ class TrainingPipeline:
 
         self.client.set_script_from_file("cvae_script",
                                         f"{base_path}/MD_to_CVAE/MD_to_CVAE_scripts.py",
-                                        device="GPU")
+                                        device="CPU")
 
         return md_ensemble
 
