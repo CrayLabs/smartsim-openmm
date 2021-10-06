@@ -15,7 +15,7 @@ from tensorflow.python.framework.convert_to_constants import (
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--dim", default=3, help="Number of dimensions in latent space")
-parser.add_argument("-gpu", default=0, help="gpu_id")
+parser.add_argument("-gpu", default=None, help="ID of GPU to use for training")
 
 args = parser.parse_args()
 

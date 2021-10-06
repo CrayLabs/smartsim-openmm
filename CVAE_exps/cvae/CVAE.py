@@ -31,7 +31,6 @@ def run_cvae(gpu_id, hyper_dim=3, epochs=10, cm_data_input=None):
     
     client = Client(None, bool(int(os.getenv("SS_CLUSTER", False))))
     client.use_tensor_ensemble_prefix(False)
-    batches = None
     print("Starting cvae training.")
 
     print("Train dataset size: ", cm_data_input.shape)
@@ -42,7 +41,8 @@ def run_cvae(gpu_id, hyper_dim=3, epochs=10, cm_data_input=None):
     input_shape = cm_data_train.shape
 
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"]=str(gpu_id) 
+    if gpu_id is not None:
+        os.environ["CUDA_VISIBLE_DEVICES"]=str(gpu_id) 
 
     cvae = CVAE(input_shape, hyper_dim) 
 
