@@ -82,9 +82,7 @@ class TrainingPipeline:
             md_batch_settings.add_preamble(f'. {conda_sh}')
             md_batch_settings.add_preamble(f'conda activate {conda_path}')
             md_batch_settings.add_preamble('module load cudatoolkit')
-            # md_batch_settings.add_preamble('export CUDNN_LIBRARY=/lus/scratch/arigazzi/anaconda3/envs/openmm/lib/')
-            # md_batch_settings.add_preamble('export LD_LIBRARY_PATH=$CUDNN_LIBRARY:$LD_LIBRARY_PATH')
-        
+           
         python_path = os.getenv("PYTHONPATH", "")
         python_path = f"{base_path}:{base_path}/MD_exps:{base_path}/MD_exps/MD_utils_fspep:" + python_path
         os.environ["PYTHONPATH"]=python_path

@@ -21,5 +21,3 @@ dtype = Dtypes.tensor_from_numpy(out)
 dataset1.add_tensor("out_new", out, dtype)
 
 super(type(client), client).put_dataset(dataset1)
-
-# client.set_script_from_file("test_script", "/lus/scratch/arigazzi/smartsim-dev/smartsim-openmm/MD_to_CVAE/MD_to_CVAE_scripts.py", device="CPU")

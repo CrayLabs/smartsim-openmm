@@ -77,7 +77,7 @@ def openmm_simulate_amber_fs_pep(pdb_file, GPU_index=0,
 
 
 if __name__ == '__main__': 
-    openmm_simulate_amber_fs_pep('/lus/theta-fs0/projects/datascience/arigazzi/smartsim-dev/smartsim-openmm/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb',
+    openmm_simulate_amber_fs_pep(os.path.join(os.path.dirname(os.path.abspath(os.path.curdir)), 'MD_exps', 'fs-pep', 'pdb', '100-fs-peptide-400K.pdb'),
                                 GPU_index="0",
                                 report_time=50*u.picoseconds,
                                 sim_time=float(5)*u.nanoseconds)
