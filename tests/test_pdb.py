@@ -5,11 +5,11 @@ import MDAnalysis.coordinates as MDCoords
 
 from MDAnalysis.lib.util import NamedStream
 
-import io
+import io, os
 
 
-filename = '/lus/scratch/arigazzi/smartsim-dev/smartsim-openmm/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb'
-traj_file = '/lus/scratch/arigazzi/smartsim-dev/smartsim-openmm/SmartSim-DDMD/omm_out/omm_runs_00_1632649608/output.dcd'
+filename = os.path.join(os.path.dirname(os.path.abspath(os.path.curdir)), 'MD_exps', 'fs-pep', 'pdb', '100-fs-peptide-400K.pdb')
+traj_file = ''  # put a valid dcd file here
 
 
 pdb_from_file = pmd.read_PDB(filename)

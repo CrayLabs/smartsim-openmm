@@ -45,7 +45,7 @@ def save_model_to_db(client, model, prefix):
 
     model_serialized = frozen_func.graph.as_graph_def().SerializeToString(deterministic=True)
 
-    client.set_model("_".join([prefix,model.name]), model=model_serialized, tag="",
+    client.set_model("_".join([prefix, model.name]), model=model_serialized, tag="",
                     backend="TF", device="GPU", inputs=input_names, outputs=output_names)
 
 
@@ -73,7 +73,7 @@ if __name__ == '__main__':
         # them to the previous ones
         for prefix in prefixes:
             key = "{" + prefix + "}.preproc_" + str(next_batch[prefix])
-            print(key)
+            print("Attempting to retrieve " + key)
             attempts = 5
             while client.key_exists(key) and attempts>0:    
                 try:
@@ -86,8 +86,9 @@ if __name__ == '__main__':
                     # If batch exists, go to next one
                     next_batch[prefix] += 1
                     key = "{" + prefix + "}.preproc_" + str(next_batch[prefix])
+                    print("Success. Attempting to retrieve " + key)
                     attempts = 5
-                    break
+                    
 
                 except RedisReplyError:
                     time.sleep(5)
@@ -114,7 +115,7 @@ if __name__ == '__main__':
 
         # Write to db
         dataset_name = os.getenv("SSKEYOUT")
-        print(f"Writing to {dataset_name}")
+        print(f"Stored model with prefix {prefix}. Writing metadata to {dataset_name}.")
         if client.key_exists(dataset_name):
             dataset = client.get_dataset(dataset_name)
         else:

@@ -7,6 +7,7 @@ from smartsim.database import CobaltOrchestrator
 from smartredis import Client, Dataset
 from smartsim_utils import put_text_file
 
+from thetagpu_utils import generate_rankfiles
 
 TINY = True
 base_path = os.path.abspath(os.curdir)
@@ -24,6 +25,7 @@ launcher='cobalt'
 
 base_dim = 3
 
+os.environ["SMARTSIM_LOG_LEVEL"] = 'developer'
 
 if TINY:
     LEN_initial = 3
@@ -54,8 +56,7 @@ ml_hosts = hosts[base_host:base_host+ml_node_count]
 base_host += ml_node_count
 outlier_hosts = hosts[-1]
 
-
-
+rankfile_dir = generate_rankfiles(md_hosts, ml_hosts, gpus_per_node, base_path)
 
 print("-"*49)
 print(" "*21 + "WELCOME")
@@ -68,7 +69,7 @@ class TrainingPipeline:
         self.cluster_db = db_node_count>1
         
     def start_orchestrator(self):
-        self.orchestrator = CobaltOrchestrator(db_nodes=db_node_count, time="02:30:00", 
+        self.orchestrator = CobaltOrchestrator(db_nodes=db_node_count, 
                                                 interface=INTERFACE, batch=False, run_command='mpirun',
                                                 hosts=[host+'.mcp' for host in db_hosts])
         self.exp.generate(self.orchestrator)
@@ -95,19 +96,16 @@ class TrainingPipeline:
                                         "SS_BINARY_FILES": BINARY_FILES})
         md_run_settings.set_tasks(1)
 
-
         md_ensemble = self.exp.create_ensemble("openmm", run_settings=md_run_settings, replicas=num_MD)
         
         md_ensemble.enable_key_prefixing()
         self.exp.generate(md_ensemble, overwrite=True)
-
-        md_run_settings.run_args["cpu-set"] = 
     
         for i, md in enumerate(md_ensemble):
             md.run_settings.set_hostlist([md_hosts[i//gpus_per_node]])
             md.run_settings.update_env({"CUDA_VISIBLE_DEVICES": str(i%gpus_per_node)})
             # ThetaGPU specific
-            md.run_settings.run_arg
+            md.run_settings.run_args["rankfile"] = os.path.join(rankfile_dir, f"md_ranks_{i}")
 
 
         self.client.set_script_from_file("cvae_script",
@@ -169,6 +167,7 @@ class TrainingPipeline:
         for i, ml in enumerate(ml_ensemble):
             ml.run_settings.set_hostlist(ml_hosts[i//gpus_per_node])
             ml.run_settings.update_env({"CUDA_VISIBLE_DEVICES": str(i%gpus_per_node)})
+            ml.run_settings.run_args["rankfile"] = os.path.join(rankfile_dir, f"ml_ranks_{i}")
 
 
         
@@ -235,12 +234,12 @@ class TrainingPipeline:
         self.interfacing_stage = self.generate_interfacing_stage() 
         while not any([self.client.key_exists(ml.name) for ml in self.ml_stage]):
             time.sleep(5)
-        print("STARTING OUTLIER SEARCH")
+        print("STARTING OUTLIER SEARCH", flush=True)
         self.exp.start(self.interfacing_stage, block=False)
 
         while True:
             # Here possibly plot info about simulation
-            print("Simulation is running")
+            print("Simulation is running", flush=True)
             time.sleep(120)
 
 

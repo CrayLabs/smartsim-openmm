@@ -150,7 +150,7 @@ def update_MD_exe_args(md_workers, outlier_idx):
                 input_dataset.add_meta_string("args", exe_arg)
             
             client.put_dataset(input_dataset)
-            print("Updated " + input_dataset_key + "with " + " ".join(exe_args), flush=True)
+            print("Updated " + input_dataset_key + " with " + " ".join(exe_args), flush=True)
 
 
 # Index of outlier in outliers_list
