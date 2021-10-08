@@ -38,3 +38,19 @@ def generate_rankfiles(md_nodes: list, ml_nodes: list, processes_per_node: int, 
             rankfile.write(f"rank 0={ml_nodes[ml_idx//processes_per_node]} slot={first_slot}-{last_slot}")
 
     return rankfile_dir
+
+def assign_hosts(db_node_count: int, md_node_count: int, ml_node_count: int):
+    nodefile_name = os.getenv('COBALT_NODEFILE')
+    with open(nodefile_name, 'r') as nodefile:
+        hosts = [node.strip("\n") for node in nodefile.readlines()]
+
+    base_host = 0
+    db_hosts = hosts[base_host:db_node_count]
+    base_host += db_node_count
+    md_hosts = hosts[base_host:base_host+md_node_count]
+    base_host += md_node_count
+    ml_hosts = hosts[base_host:base_host+ml_node_count]
+    base_host += ml_node_count
+    outlier_hosts = hosts[-1]
+
+    return db_hosts, md_hosts, ml_hosts, outlier_hosts

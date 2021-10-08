@@ -1,18 +1,17 @@
 import os, time 
 import numpy as np
 from smartsim import Experiment
-from smartsim.settings import MpirunSettings, CobaltBatchSettings
+from smartsim.settings import MpirunSettings
 from smartsim.database import CobaltOrchestrator
 
 from smartredis import Client, Dataset
 from smartsim_utils import put_text_file
 
-from thetagpu_utils import generate_rankfiles
+from thetagpu.thetagpu_utils import generate_rankfiles, assign_hosts
 
-TINY = True
+TINY = False
 base_path = os.path.abspath(os.curdir)
 gpus_per_node = 8 #  1 on Cray XC-50
-
 
 INTERFACE="enp226s0"
 
@@ -24,8 +23,6 @@ BINARY_FILES = "0"
 launcher='cobalt'
 
 base_dim = 3
-
-os.environ["SMARTSIM_LOG_LEVEL"] = 'developer'
 
 if TINY:
     LEN_initial = 3
@@ -43,19 +40,8 @@ else:
 md_node_count = int(np.ceil(md_counts//gpus_per_node))
 ml_node_count = int(np.ceil(ml_counts//gpus_per_node))
 
-nodefile_name = os.getenv('COBALT_NODEFILE')
-with open(nodefile_name, 'r') as nodefile:
-    hosts = [node.strip("\n") for node in nodefile.readlines()]
-
-base_host = 0
-db_hosts = hosts[base_host:db_node_count]
-base_host += db_node_count
-md_hosts = hosts[base_host:base_host+md_node_count]
-base_host += md_node_count
-ml_hosts = hosts[base_host:base_host+ml_node_count]
-base_host += ml_node_count
-outlier_hosts = hosts[-1]
-
+# Theta GPU setup
+db_hosts, md_hosts, ml_hosts, outlier_hosts = assign_hosts(db_node_count, md_node_count, ml_node_count)
 rankfile_dir = generate_rankfiles(md_hosts, ml_hosts, gpus_per_node, base_path)
 
 print("-"*49)
