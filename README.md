@@ -45,8 +45,11 @@ using the correct GPU libraries and drivers.
 
 ## System-dependent settings and driver scripts
 
-The code contained in `smartsim_md.py` is written to be run on a Cray XC-50 system running Slurm as a workload manager.
-The code contained in `smartsim_md_thetagpu` is written to be run on Theta GPU, with Cobalt as a workload manager.
+- The code contained in `smartsim_md.py` is written to be run on a Cray XC-50 system running Slurm as a workload manager.
+- The code contained in `smartsim_md_thetagpu` is written to be run on Theta GPU, with Cobalt as a workload manager.
+Each MD simulation uses one GPU. Since each Theta GPU node has 8 GPUs, 8 MD simulations are launched on the same node,
+each one using one GPU and 16 CPUs (rank files are generated to bind tasks to CPUs). The same holds for CVAE training,
+where each CVAE is trained on a separate GPU.
 
 Launcher and system constraints (like the flag used to access GPUs), have to be adapted for other systems.
 
