@@ -136,10 +136,10 @@ class TrainingPipeline:
     
         os.environ["PYTHONPATH"]=python_path
         ml_run_settings = MpirunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
-                                        '--dim', "SmartSim"],
+                                                    '--dim', "SmartSim"],
                                         env_vars={"PYTHONPATH": python_path,
-                                        "SS_CLUSTER": str(int(self.cluster_db)),
-                                        "SS_BINARY_FILES": BINARY_FILES}) 
+                                                  "SS_CLUSTER": str(int(self.cluster_db)),
+                                                  "SS_BINARY_FILES": BINARY_FILES}) 
         ml_run_settings.set_tasks(1)
 
 
@@ -178,11 +178,10 @@ class TrainingPipeline:
                                                               "PYTHONUNBUFFERED": "1",
                                                               "SS_BINARY_FILES": BINARY_FILES})
         interfacing_run_settings.set_tasks(1)
-        interfacing_run_settings.set_hostlist(hosts[-1])
+        interfacing_run_settings.set_hostlist(outlier_hosts)
 
         interfacing_run_settings.update_env({"PYTHONUNBUFFERED": "1"})
 
-       
 
         interfacing_model = self.exp.create_model('SmartSim-Outlier_search', run_settings=interfacing_run_settings)
         interfacing_model.attach_generator_files(to_copy = [os.path.join(base_path, "Outlier_search", "outlier_locator.py"),
