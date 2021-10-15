@@ -2,9 +2,6 @@
 
 This repo contains a SmartSim version of the DeepDriveMD workflow. 
 
-This branch's version is equivalent to the standard file-based
-SmartSimMD pipeline.
-
 ## Installation
 
 We suggest to create a fresh conda environment
