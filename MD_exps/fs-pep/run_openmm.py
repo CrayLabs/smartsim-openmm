@@ -1,13 +1,13 @@
 import openmm.unit as u
-import sys, os, shutil 
+import sys, os, shutil
 import time, io
-import argparse 
+import argparse
 from smartredis import Client, Dataset
 from smartredis.error import RedisReplyError
 
 from smartsim_utils import put_strings_as_file
 
-from MD_utils_fspep.openmm_simulation import openmm_simulate_amber_fs_pep 
+from MD_utils_fspep.openmm_simulation import openmm_simulate_amber_fs_pep
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-f", "--pdb_file", dest="f", help="pdb file", type=str, default=None)
@@ -33,7 +33,8 @@ iteration = 0
 binary_files = bool(int(os.getenv("SS_BINARY_FILES", "1")))
 
 while not stop:
-    if not client.key_exists(input_dataset_key):
+    print("Checking dataset_exists", flush=True)
+    if not client.dataset_exists(input_dataset_key):
         time.sleep(5)
     else:
         try:
@@ -48,23 +49,23 @@ while not stop:
         else:
             args = parser.parse_args(input_args)
             print(args, flush=True)
-            if args.f: 
-                pdb_file = os.path.abspath(args.f) 
-            else: 
-                raise IOError("No pdb file assigned...") 
+            if args.f:
+                pdb_file = os.path.abspath(args.f)
+            else:
+                raise IOError("No pdb file assigned...")
 
-            if args.p: 
-                top_file = os.path.abspath(args.p) 
+            if args.p:
+                top_file = os.path.abspath(args.p)
             else:
                 top_file = None
 
-            if args.c: 
+            if args.c:
                 check_point = os.path.abspath(args.c)
             else:
                 check_point = None
 
             gpu_index = args.gpu
-            
+
             output_path = args.output_path
             os.makedirs(output_path, exist_ok=True)
 

@@ -1,6 +1,6 @@
 # SmartSim OpenMM
 
-This repo contains a SmartSim version of the DeepDriveMD workflow. 
+This repo contains a SmartSim version of the DeepDriveMD workflow.
 
 ## Installation
 
@@ -13,7 +13,7 @@ conda create --name openmm python=3.7
 and then to install packages in the following way:
 
 ```bash
-pip install cmake tensorflow==2.4.2 numpy==1.19.5 cython smartsim sklearn MDAnalysis parmed tables
+pip install cmake tensorflow==2.5.2 numpy==1.19.5 cython smartsim sklearn MDAnalysis parmed tables
 ```
 then download SmartRedis from the CrayLabs repo and build it
 

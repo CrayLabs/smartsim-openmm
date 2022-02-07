@@ -1,10 +1,10 @@
 import time
-import openmm.unit as u 
+import openmm.unit as u
 from smartredis import Client, Dataset
 from smartredis.util import Dtypes
 
-import numpy as np 
-import h5py 
+import numpy as np
+import h5py
 import os
 
 from openmm.app import DCDFile
@@ -37,8 +37,8 @@ class ContactMapReporter(object):
         positions = np.array(state.getPositions().value_in_unit(u.angstrom))
         positions_ca = positions[ca_indices].astype(np.float32)
         distance_matrix = distances.self_distance_array(positions_ca)
-        contact_map = (distance_matrix < 8.0) * 1.0 
-        new_shape = (len(contact_map), self._out.shape[1] + 1) 
+        contact_map = (distance_matrix < 8.0) * 1.0
+        new_shape = (len(contact_map), self._out.shape[1] + 1)
         self._out.resize(new_shape)
         self._out[:, new_shape[1]-1] = contact_map
         self._file.flush()
@@ -47,7 +47,7 @@ class SmartSimContactMapReporter(object):
     """The SmartSim contact map reporter will
     store the contact maps internally (every report interval).
     When the reporter is deleted (and thus the simulation is over),
-    contact maps are put on the database, preprocessed and 
+    contact maps are put on the database, preprocessed and
     the resulting samples (which can be used to train the CVAE)
     are concatenated to the existing ones.
     The concatenation is needed to maintain
@@ -72,7 +72,7 @@ class SmartSimContactMapReporter(object):
         dataset_name = os.getenv("SSKEYOUT")
         self._client.use_tensor_ensemble_prefix(False)
         self._dataset_prefix = "{"+dataset_name+"}."
-        if self._client.key_exists(dataset_name):
+        if self._client.dataset_exists(dataset_name):
            self._dataset = self._client.get_dataset(dataset_name)
            self._append = True
         else:
@@ -93,7 +93,7 @@ class SmartSimContactMapReporter(object):
                                     "cm_to_cvae",
                                     [batch_key],
                                     [preproc_batch_key])
-            
+
             # preproc is the concatenated version used by outlier search
             self._client.copy_tensor(preproc_batch_key, preproc_all_key)
         else:
@@ -108,7 +108,7 @@ class SmartSimContactMapReporter(object):
                                     [batch_key],
                                     [preproc_batch_key])
 
-            # preproc is the concatenated version used by outlier search                      
+            # preproc is the concatenated version used by outlier search
             self._client.run_script("cvae_script",
                                     "concatenate",
                                     [preproc_all_key, preproc_batch_key],
@@ -119,7 +119,7 @@ class SmartSimContactMapReporter(object):
         self._dataset.add_meta_scalar("cm_lengths", traj_length)
 
         print(f"Destroying reporter, final size of contact map: {out.shape}")
-    
+
         self._dataset.add_meta_string("timestamps", self._timestamp)
         self._dataset.add_meta_string("paths", self._output_path)
         self._client.put_dataset(self._dataset)
@@ -136,7 +136,7 @@ class SmartSimContactMapReporter(object):
         positions = np.array(state.getPositions().value_in_unit(u.angstrom))
         positions_ca = positions[ca_indices].astype(np.float32)
         distance_matrix = distances.self_distance_array(positions_ca)
-        contact_map = (distance_matrix < 8.0) * 1.0 
+        contact_map = (distance_matrix < 8.0) * 1.0
         if self._out is None:
             self._out = np.empty(shape=(1, len(contact_map)))
             self._out[0,:] = np.transpose(contact_map)
