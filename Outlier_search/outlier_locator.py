@@ -64,14 +64,7 @@ for key in incoming_entities:
 num_md_workers = len(md_workers)
 num_ml_workers = len(ml_workers)
 
-print(md_workers, ml_workers)
-print("Establishing client connection", flush=True)
-time.sleep(180)
-cluster_ss = os.environ['SS_CLUSTER']
-print(f"SS_CLUSTER = {cluster_ss}", flush=True)
 client = Client(None, bool(int(os.getenv("SS_CLUSTER", False))))
-print("Finished client init", flush=True)
-time.sleep(20)
 client.use_tensor_ensemble_prefix(False)
 
 exp_path = args.exp_path
@@ -187,7 +180,7 @@ while True:
     best_prefix = None
     model_dim = None
     for ml_worker in ml_workers:
-        if not client.key_exists(ml_worker):
+        if not client.dataset_exists(ml_worker):
             continue
         dataset = client.get_dataset(ml_worker)
         prefixes = dataset.get_meta_strings("prefixes")
