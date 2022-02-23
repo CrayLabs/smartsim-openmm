@@ -1,8 +1,6 @@
 import os, time
 import numpy as np
 from smartsim import Experiment
-from smartsim.settings import SrunSettings, SbatchSettings, MpirunSettings
-from smartsim.database import SlurmOrchestrator
 
 from smartredis import Client, Dataset
 from smartsim_utils import put_text_file
@@ -50,7 +48,7 @@ print("-"*49 + "\n")
 
 class TrainingPipeline:
     def __init__(self):
-        self.exp = Experiment(name="SmartSim-DDMD", launcher=launcher)
+        self.exp = Experiment(name="SmartSim-DDMD", launcher="auto")
         self.exp.generate(overwrite=True)
         self.cluster_db = db_node_count>1
 
@@ -60,11 +58,15 @@ class TrainingPipeline:
             print("Found orchestrator checkpoint, reconnecting")
             self.orchestrator = self.exp.reconnect_orchestrator(checkpoint)
         else:
-            self.orchestrator = SlurmOrchestrator(db_nodes=db_node_count, time="02:30:00", interface=INTERFACE, batch=BATCH)
+            self.orchestrator = self.exp.create_database(db_nodes=db_node_count,
+                                                         time="02:30:00",
+                                                         interface=INTERFACE,
+                                                         batch=BATCH)
             # self.orchestrator.set_batch_arg("constraint", "P100")
             self.exp.generate(self.orchestrator)
             self.exp.start(self.orchestrator)
-        self.client = Client(address=self.orchestrator.get_address()[0], cluster=self.cluster_db)
+        self.client = Client(address=self.orchestrator.get_address()[0],
+                             cluster=self.cluster_db)
 
         return
 
@@ -75,10 +77,13 @@ class TrainingPipeline:
         """
 
         if BATCH:
-            md_batch_args = {"nodes": md_counts, "ntasks-per-node": 1, "constraint": "V100", "exclusive": None}
-            md_batch_settings = SbatchSettings(time="02:00:00", batch_args=md_batch_args)
-            md_batch_settings.set_partition("spider")
-
+            md_batch_args = {"nodes": md_counts,
+                             "ntasks-per-node": 1,
+                             "constraint": "V100",
+                             "partiion": "spider",
+                             "exclusive": None}
+            md_batch_settings = self.exp.create_batch_settings(time="02:00:00",
+                                                               batch_args=md_batch_args)
             md_batch_settings.add_preamble(f'. {conda_sh}')
             md_batch_settings.add_preamble(f'conda activate {conda_path}')
             md_batch_settings.add_preamble('module load cudatoolkit')
@@ -87,12 +92,16 @@ class TrainingPipeline:
         python_path = f"{base_path}:{base_path}/MD_exps:{base_path}/MD_exps/MD_utils_fspep:" + python_path
         os.environ["PYTHONPATH"]=python_path
 
-        md_run_settings = SrunSettings(exe="python",
-                                        exe_args=f"{base_path}/MD_exps/fs-pep/run_openmm.py",
-                                        run_args={"exclusive": None},
-                                        env_vars={"PYTHONPATH": python_path,
-                                        "SS_CLUSTER": str(int(self.cluster_db)),
-                                        "SS_BINARY_FILES": BINARY_FILES})
+        md_run_settings_env_var = {"PYTHONPATH": python_path,
+                                   "SS_CLUSTER": str(int(self.cluster_db)),
+                                   "SS_BINARY_FILES": BINARY_FILES}
+        md_run_settings_exe_args = f"{base_path}/MD_exps/fs-pep/run_openmm.py"
+        md_run_settings_run_args = {"exclusive": None}
+        md_run_settings = self.exp.create_run_settings(run_command="auto",
+                                                       exe="python",
+                                                       exe_args=md_run_settings_exe_args,
+                                                       run_args=md_run_settings_run_args,
+                                                       env_vars=md_run_settings_env_var)
         md_run_settings.set_nodes(1)
         md_run_settings.set_tasks(1)
         md_run_settings.set_tasks_per_node(1)
@@ -150,8 +159,13 @@ class TrainingPipeline:
         python_path = f"{base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:" + python_path
 
         if BATCH:
-            ml_batch_settings = SbatchSettings(time="02:00:00", batch_args={"nodes": num_ML, "ntasks-per-node": 1, "constraint": "V100"})
-            ml_batch_settings.set_partition("spider")
+
+            ml_batch_args = {"nodes": num_ML,
+                             "ntasks-per-node": 1,
+                             "constraint": "V100",
+                             "partition": "spider"}
+            ml_batch_settings = self.exp.create_batch_settings(time="02:00:00",
+                                                               batch_args=ml_batch_args)
 
             ml_batch_settings.add_preamble([f'. {conda_sh}', 'module load cudatoolkit', f'conda activate {conda_path}' ])
             ml_ensemble = self.exp.create_ensemble("SmartSim-ML", batch_settings=ml_batch_settings)
@@ -159,11 +173,14 @@ class TrainingPipeline:
             for i in range(num_ML):
                 dim = i + base_dim
 
-                ml_run_settings = SrunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py',
-                                               '--dim', str(dim)],
-                                                env_vars={"PYTHONPATH": python_path,
-                                                "SS_CLUSTER": str(int(self.cluster_db)),
-                                                "SS_BINARY_FILES": BINARY_FILES})
+                exe_args = [f'{base_path}/CVAE_exps/train_cvae.py','--dim', str(dim)]
+                env_vars = {"PYTHONPATH": python_path,
+                            "SS_CLUSTER": str(int(self.cluster_db)),
+                            "SS_BINARY_FILES": BINARY_FILES}
+                ml_run_settings = self.exp.create_run_settings(run_command="auto",
+                                                               exe='python',
+                                                               exe_args=exe_args,
+                                                               env_vars=env_vars)
                 ml_run_settings.set_tasks_per_node(1)
                 ml_run_settings.set_tasks(1)
                 ml_run_settings.set_nodes(1)
@@ -179,11 +196,12 @@ class TrainingPipeline:
                     ml_model.register_incoming_entity(entity)
                 ml_ensemble.add_model(ml_model)
         else:
-            ml_run_settings = SrunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py',
-                                            '--dim', "SmartSim"],
-                                            env_vars={"PYTHONPATH": python_path,
-                                            "SS_CLUSTER": str(int(self.cluster_db)),
-                                            "SS_BINARY_FILES": BINARY_FILES})
+            ml_run_settings = self.exp.create_run_settings(run_command="auto",
+                                                           exe="python",
+                                                           exe_args=[f'{base_path}/CVAE_exps/train_cvae.py','--dim', "SmartSim"],
+                                                           env_vars={"PYTHONPATH": python_path,
+                                                                     "SS_CLUSTER": str(int(self.cluster_db)),
+                                                                     "SS_BINARY_FILES": BINARY_FILES})
             # Slurm env var workaround, this will soon not be needed anymore
             sskeyin = ":".join([entity.name for entity in self.md_stage])
             ml_run_settings.update_env({"SSKEYIN_SLURM": sskeyin})
@@ -208,15 +226,16 @@ class TrainingPipeline:
 
         python_path = os.getenv("PYTHONPATH", "")
         python_path = f"{base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:" + python_path
-
-        interfacing_run_settings = SrunSettings('python',
-                                                exe_args=['outlier_locator.py',
-                                                '--md', os.path.join(self.exp.exp_path, 'omm_out'),
-                                                '--pdb', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb',
-                                                '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb',
-                                                '--len_initial', str(LEN_initial),
-                                                '--len_iter', str(LEN_iter),
-                                                '--exp_path', self.exp.exp_path],
+        interfacing_exe_args = ['outlier_locator.py',
+                                '--md', os.path.join(self.exp.exp_path, 'omm_out'),
+                                '--pdb', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb',
+                                '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb',
+                                '--len_initial', str(LEN_initial),
+                                '--len_iter', str(LEN_iter),
+                                                '--exp_path', self.exp.exp_path]
+        interfacing_run_settings = self.exp.create_run_settings(run_command="auto",
+                                                exe = 'python',
+                                                exe_args=interfacing_exe_args,
                                                 env_vars={"PYTHONPATH": python_path,
                                                             "SS_CLUSTER": str(int(self.cluster_db)),
                                                             "PYTHONUNBUFFERED": "1",
@@ -231,10 +250,11 @@ class TrainingPipeline:
         interfacing_run_settings.update_env({"PYTHONUNBUFFERED": "1"})
 
         if BATCH:
-            interfacing_batch_settings = SbatchSettings(time="02:00:00",
-                                                        batch_args = {"nodes": 1,
-                                                        "ntasks-per-node": 1})
-            interfacing_batch_settings.set_partition("spider")
+            interfacing_batch_args = {"nodes": 1,
+                                      "ntasks-per-node": 1,
+                                      "partition": "spider"}
+            interfacing_batch_settings = self.exp.create_batch_settings(time="02:00:00",
+                                                                        batch_args=interfacing_batch_args)
 
             interfacing_batch_settings.add_preamble([f'. {conda_sh}',
                                                     'module load cudatoolkit',
