@@ -217,7 +217,7 @@ class TrainingPipeline:
         # --------------------------
         # Learning stage
         self.ml_stage = self.generate_ML_stage(num_ML=ml_counts)
-        while not any([self.client.key_exists(md.name) for md in self.md_stage]):
+        while not any([self.client.dataset_exists(md.name) for md in self.md_stage]):
             time.sleep(5)
         print("STARTING ML")
         self.exp.start(self.ml_stage, block=False)
@@ -225,7 +225,7 @@ class TrainingPipeline:
         # --------------------------
         # Outlier identification stage
         self.interfacing_stage = self.generate_interfacing_stage()
-        while not any([self.client.key_exists(ml.name) for ml in self.ml_stage]):
+        while not any([self.client.dataset_exists(ml.name) for ml in self.ml_stage]):
             time.sleep(5)
         print("STARTING OUTLIER SEARCH", flush=True)
         self.exp.start(self.interfacing_stage, block=False)
