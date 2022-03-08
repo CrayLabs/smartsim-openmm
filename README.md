@@ -36,9 +36,10 @@ pip install smartsim
 ```
 Follow the SmartSim docs instructions on how to build the ML backends for GPU.
 
-Finally, given the long list of dependencies, we suggest building OpenMM from source,
-using the correct GPU libraries and drivers.
-
+Finally, OpenMM can be built from source or installed via conda with:
+```bash
+conda install -c conda-forge openmm
+```
 
 ## System-dependent settings and driver scripts
 
