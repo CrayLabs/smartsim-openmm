@@ -1,8 +1,6 @@
-import os, time 
+import os, time
 import numpy as np
 from smartsim import Experiment
-from smartsim.settings import MpirunSettings
-from smartsim.database import CobaltOrchestrator
 
 from smartredis import Client, Dataset
 from smartsim_utils import put_text_file
@@ -53,11 +51,13 @@ class TrainingPipeline:
         self.exp = Experiment(name="SmartSim-DDMD", launcher=launcher)
         self.exp.generate(overwrite=True)
         self.cluster_db = db_node_count>1
-        
+
     def start_orchestrator(self):
-        self.orchestrator = CobaltOrchestrator(db_nodes=db_node_count, 
-                                                interface=INTERFACE, batch=False, run_command='mpirun',
-                                                hosts=[host+'.mcp' for host in db_hosts])
+        self.orchestrator = self.exp.create_database(db_nodes=db_node_count,
+                                                     interface=INTERFACE,
+                                                     batch=False,
+                                                     run_command='mpirun',
+                                                     hosts=[host+'.mcp' for host in db_hosts])
         self.exp.generate(self.orchestrator)
         self.exp.start(self.orchestrator)
         self.client = Client(address=self.orchestrator.get_address()[0], cluster=self.cluster_db)
@@ -65,28 +65,29 @@ class TrainingPipeline:
         return
 
 
-    def generate_MD_stage(self, num_MD=1): 
+    def generate_MD_stage(self, num_MD=1):
         """
-        Function to generate MD stage. 
+        Function to generate MD stage.
         """
 
         old_python_path = os.getenv("PYTHONPATH", "")
         python_path = f"{base_path}:{base_path}/MD_exps:{base_path}/MD_exps/MD_utils_fspep:" + old_python_path
         os.environ["PYTHONPATH"]=python_path
 
-        md_run_settings = MpirunSettings(exe="python",
-                                        exe_args=f"{base_path}/MD_exps/fs-pep/run_openmm.py",
-                                        run_args=None,
-                                        env_vars={"PYTHONPATH": python_path,
-                                        "SS_CLUSTER": str(int(self.cluster_db)),
-                                        "SS_BINARY_FILES": BINARY_FILES})
+        md_run_settings = self.exp.create_run_settings(exe="python",
+                                                       exe_args=f"{base_path}/MD_exps/fs-pep/run_openmm.py",
+                                                       run_args=None,
+                                                       run_command="mpirun",
+                                                       env_vars={"PYTHONPATH": python_path,
+                                                                 "SS_CLUSTER": str(int(self.cluster_db)),
+                                                                 "SS_BINARY_FILES": BINARY_FILES})
         md_run_settings.set_tasks(1)
 
         md_ensemble = self.exp.create_ensemble("openmm", run_settings=md_run_settings, replicas=num_MD)
-        
+
         md_ensemble.enable_key_prefixing()
         self.exp.generate(md_ensemble, overwrite=True)
-    
+
         for i, md in enumerate(md_ensemble):
             md.run_settings.set_hostlist([md_hosts[i//gpus_per_node]])
             md.run_settings.update_env({"CUDA_VISIBLE_DEVICES": str(i%gpus_per_node)})
@@ -104,7 +105,7 @@ class TrainingPipeline:
     # This function has been relocated to the Outlier Search stage,
     # here we just keep the initial_MD phase
     def init_MD_exe_args(self):
-        
+
         iter_id = 0
         put_text_file(f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb', self.client)
         for (i, omm) in enumerate(self.md_stage.entities):
@@ -120,11 +121,11 @@ class TrainingPipeline:
 
             for exe_arg in exe_args:
                 input_dataset.add_meta_string("args", exe_arg)
-            
+
             self.client.put_dataset(input_dataset)
 
 
-    def generate_ML_stage(self, num_ML=1): 
+    def generate_ML_stage(self, num_ML=1):
         """
         Function to generate the learning stage
         """
@@ -132,16 +133,18 @@ class TrainingPipeline:
 
         old_python_path = os.getenv("PYTHONPATH", "")
         python_path = f"{base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:" + old_python_path
-       
-    
-        os.environ["PYTHONPATH"]=python_path
-        ml_run_settings = MpirunSettings('python', [f'{base_path}/CVAE_exps/train_cvae.py', 
-                                                    '--dim', "SmartSim"],
-                                        env_vars={"PYTHONPATH": python_path,
-                                                  "SS_CLUSTER": str(int(self.cluster_db)),
-                                                  "SS_BINARY_FILES": BINARY_FILES}) 
-        ml_run_settings.set_tasks(1)
 
+
+        os.environ["PYTHONPATH"]=python_path
+        ml_rs_exe_args = [f'{base_path}/CVAE_exps/train_cvae.py', '--dim', "SmartSim"]
+        ml_rs_env_vars = {"PYTHONPATH": python_path,
+                          "SS_CLUSTER": str(int(self.cluster_db)),
+                          "SS_BINARY_FILES": BINARY_FILES}
+        ml_run_settings = self.exp.create_run_settings(run_command="mpirun",
+                                                       exe="python",
+                                                       exe_args=ml_rs_exe_args,
+                                                       env_vars=ml_rs_env_vars)
+        ml_run_settings.set_tasks(1)
 
         ml_ensemble = self.exp.create_ensemble("cvae", run_settings=ml_run_settings, replicas=num_ML)
         for i in range(num_ML):
@@ -156,27 +159,32 @@ class TrainingPipeline:
             ml.run_settings.run_args["rankfile"] = os.path.join(rankfile_dir, f"ml_ranks_{i}")
 
 
-        
-        return ml_ensemble 
+
+        return ml_ensemble
 
 
-    def generate_interfacing_stage(self): 
-        
+    def generate_interfacing_stage(self):
+
         python_path = os.getenv("PYTHONPATH", "")
         python_path = f"{base_path}/CVAE_exps:{base_path}/CVAE_exps/cvae:" + python_path
-        
-        interfacing_run_settings = MpirunSettings('python', 
-                                                    exe_args=['outlier_locator.py',
-                                                    '--md', os.path.join(self.exp.exp_path, 'omm_out'), 
-                                                    '--pdb', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb', 
-                                                    '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb',
-                                                    '--len_initial', str(LEN_initial),
-                                                    '--len_iter', str(LEN_iter),
-                                                    '--exp_path', self.exp.exp_path],
-                                                    env_vars={"PYTHONPATH": python_path,
-                                                              "SS_CLUSTER": str(int(self.cluster_db)),
-                                                              "PYTHONUNBUFFERED": "1",
-                                                              "SS_BINARY_FILES": BINARY_FILES})
+
+        rs_exe_args = ['outlier_locator.py',
+                       '--md', os.path.join(self.exp.exp_path, 'omm_out'),
+                       '--pdb', f'{base_path}/MD_exps/fs-pep/pdb/100-fs-peptide-400K.pdb',
+                       '--ref', f'{base_path}/MD_exps/fs-pep/pdb/fs-peptide.pdb',
+                       '--len_initial', str(LEN_initial),
+                       '--len_iter', str(LEN_iter),
+                       '--exp_path', self.exp.exp_path]
+
+        rs_env_vars = {"PYTHONPATH": python_path,
+                       "SS_CLUSTER": str(int(self.cluster_db)),
+                       "PYTHONUNBUFFERED": "1",
+                       "SS_BINARY_FILES": BINARY_FILES}
+
+        interfacing_run_settings = self.exp.create_run_settings(exe = 'python',
+                                                                exe_args=rs_exe_args,
+                                                                run_command="mpirun",
+                                                                env_vars=rs_env_vars)
         interfacing_run_settings.set_tasks(1)
         interfacing_run_settings.set_hostlist(outlier_hosts)
 
@@ -209,15 +217,15 @@ class TrainingPipeline:
         # --------------------------
         # Learning stage
         self.ml_stage = self.generate_ML_stage(num_ML=ml_counts)
-        while not any([self.client.key_exists(md.name) for md in self.md_stage]):
+        while not any([self.client.dataset_exists(md.name) for md in self.md_stage]):
             time.sleep(5)
         print("STARTING ML")
         self.exp.start(self.ml_stage, block=False)
 
         # --------------------------
         # Outlier identification stage
-        self.interfacing_stage = self.generate_interfacing_stage() 
-        while not any([self.client.key_exists(ml.name) for ml in self.ml_stage]):
+        self.interfacing_stage = self.generate_interfacing_stage()
+        while not any([self.client.dataset_exists(ml.name) for ml in self.ml_stage]):
             time.sleep(5)
         print("STARTING OUTLIER SEARCH", flush=True)
         self.exp.start(self.interfacing_stage, block=False)
@@ -242,4 +250,4 @@ if __name__ == '__main__':
 
     pipeline = TrainingPipeline()
     pipeline.run_pipeline()
-    
+

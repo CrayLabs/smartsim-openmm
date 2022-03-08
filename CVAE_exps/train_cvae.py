@@ -1,7 +1,7 @@
 import os
-import argparse 
-from cvae.CVAE import run_cvae  
-import numpy as np 
+import argparse
+from cvae.CVAE import run_cvae
+import numpy as np
 import time
 
 from smartredis import Client, Dataset
@@ -51,7 +51,7 @@ def save_model_to_db(client, model, prefix):
 
 
 
-if __name__ == '__main__': 
+if __name__ == '__main__':
 
     generation_id = 0
 
@@ -75,27 +75,27 @@ if __name__ == '__main__':
             key = "{" + prefix + "}.preproc_" + str(next_batch[prefix])
             print("Attempting to retrieve " + key)
             attempts = 5
-            while client.key_exists(key) and attempts>0:    
+            while client.key_exists(key) and attempts>0:
                 try:
                     if batches is None:
                         batches = client.get_tensor(key)
                     else:
                         new_batch = client.get_tensor(key)
                         batches = np.concatenate((batches, new_batch), axis=0)
-                    
+
                     # If batch exists, go to next one
                     next_batch[prefix] += 1
                     key = "{" + prefix + "}.preproc_" + str(next_batch[prefix])
                     print("Success. Attempting to retrieve " + key)
                     attempts = 5
-                    
+
 
                 except RedisReplyError:
                     time.sleep(5)
-                    attempts -= 1            
+                    attempts -= 1
                     if attempts == 0:
-                        print(f"{key} exists but can not be accessed, proceeding without it", flush=True)                    
-                
+                        print(f"{key} exists but can not be accessed, proceeding without it", flush=True)
+
 
         if batches is None:
             time.sleep(15)
@@ -116,7 +116,7 @@ if __name__ == '__main__':
         # Write to db
         dataset_name = os.getenv("SSKEYOUT")
         print(f"Stored model with prefix {prefix}. Writing metadata to {dataset_name}.")
-        if client.key_exists(dataset_name):
+        if client.dataset_exists(dataset_name):
             dataset = client.get_dataset(dataset_name)
         else:
             dataset = Dataset(dataset_name)

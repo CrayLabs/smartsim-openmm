@@ -21,7 +21,7 @@ def put_text_file(filename, client: Client, overwrite=False):
     :type overwrite: bool
     """
 
-    if client.key_exists(filename):
+    if client.dataset_exists(filename):
         if overwrite:
             client.delete_dataset(filename)
         else:
@@ -48,7 +48,7 @@ def put_strings_as_file(filename, strings, client: Client, overwrite=False):
     """
     # file_basename = os.path.basename(filename)
 
-    if client.key_exists(filename):
+    if client.dataset_exists(filename):
         if overwrite:
             client.delete_dataset(filename)
         else:
@@ -133,7 +133,7 @@ def save_text_file(filename, client: Client, exist_ok=True, path=None):
                  to ``None``, the path will be inferred from `filename`.
     """
 
-    if not client.key_exists(filename):
+    if not client.dataset_exists(filename):
         raise IOError(f"File {filename} does not exist on database.")
 
     dataset = client.get_dataset(filename)
@@ -208,7 +208,7 @@ def save_binary_file(filename, client: Client, exist_ok=True, path=None):
                  to ``None``, the path will be inferred from `filename`.
     """
 
-    if not client.key_exists(filename):
+    if not client.dataset_exists(filename):
         raise IOError(f"File {filename} does not exist on database.")
 
     dataset = client.get_dataset(filename)
