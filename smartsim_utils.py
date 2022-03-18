@@ -46,7 +46,6 @@ def put_strings_as_file(filename, strings, client: Client, overwrite=False):
     :param overwrite: [description]. Defaults to False.
 
     """
-    # file_basename = os.path.basename(filename)
 
     if client.key_exists(filename):
         if overwrite:
@@ -59,12 +58,7 @@ def put_strings_as_file(filename, strings, client: Client, overwrite=False):
     for line in strings:
         dataset.add_meta_string("content", line)
     
-    # if filename == file_basename:
-    #     path_to_file = os.path.abspath(os.curdir)
-    # else:
-    #     path_to_file = os.path.dirname(filename)
 
-    # dataset.add_meta_string("path", path_to_file)
     client.put_dataset(dataset)
 
 
@@ -82,7 +76,6 @@ def get_text_file(filename, client: Client):
     :returns: Content of text file
     :rtype: list[str]
     """
-    # file_basename = os.path.basename(filename)
     attempts = 5
     while attempts>0:
         try:
@@ -92,6 +85,25 @@ def get_text_file(filename, client: Client):
             time.sleep(5)
     
     raise IOError(f"File {filename} does not exist in database.")
+
+
+def put_stream_as_file(filename, text_stream, client: Client, overwrite=False):
+
+    if client.key_exists(filename):
+        if overwrite:
+            client.delete_dataset(filename)
+        else:
+            raise IOError(f"File {filename} already exists in database.")
+    
+    dataset = Dataset(filename)
+    pos = text_stream.tell()
+    line = text_stream.read()
+    while line:
+        dataset.add_meta_string("content", line)
+        line = text_stream.read()
+
+    client.put_dataset(dataset)
+    text_stream.seek(pos)
 
 
 def get_text_stream(filename, client: Client):
